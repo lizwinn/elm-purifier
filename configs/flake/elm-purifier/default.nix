@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: MIT
-{ ... }:
+{ closure-lib, ... }:
 {
   config,
   inputs,
@@ -8,33 +8,29 @@
 }:
 {
 
-  imports = [ inputs.flake-parts.flakeModules.partitions ];
+  imports = [
+    inputs.flake-parts.flakeModules.partitions
+    closure-lib.caisson.modules.flake."purifier/purifier-packages"
+  ];
 
   debug = false;
-  caisson = {
-    libOverlays.exported = libOverlays: {
-      inherit (libOverlays) default;
-    };
-
-    # The scope `elm-purifier` is the `default` entry of this flake's package
-    # overlay registry (pkg-overlays/): the package set applies it by
-    # default, and the flake exports it as `pkgOverlays` and as the plain
-    # `overlays.default`. The flake's `packages` output holds the
-    # derivations of the scope, because the scope also holds the builder,
-    # which is a function.
-    nixpkgs = {
-      packages.export.enabled = false;
-    };
+  caisson.libOverlays.exported = libOverlays: {
+    inherit (libOverlays) default;
   };
+
+  # The scope `elm-purifier` is the `default` entry of this flake's package
+  # overlay registry (pkg-overlays/): the package set applies it by default,
+  # and the flake exports it as `pkgOverlays` and as the plain
+  # `overlays.default`. The module `purifier-packages` of the shared library
+  # publishes the derivations of the scope as the flake's `packages`.
+  purifier.scope = "elm-purifier";
 
   # `nix run github:nix-purifiers/elm-purifier -- lock` locks the project
   # in the current directory.
   perSystem =
     { pkgs, ... }:
     {
-      packages = lib.filterAttrs (_: lib.isDerivation) pkgs.elm-purifier // {
-        default = pkgs.elm-purifier.cli;
-      };
+      packages.default = pkgs.elm-purifier.cli;
     };
 
   partitionedAttrs.checks = "checks";

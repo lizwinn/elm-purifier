@@ -171,6 +171,20 @@ in
   app-report =
     runsWorker "app-report" app.packages."Report.Json" "Report.Json"
       ''{"greeting":"Hello, Nix!"}'';
+  # Fresh dependency caches exercise the compiler's initial d.dat write,
+  # which must finish before compiling the project's modules updates it.
+  compiler-cache-writes = app.packages."Report.Json".overrideAttrs (old: {
+    name = "compiler-cache-writes";
+    env = (old.env or { }) // {
+      GHCRTS = "-N2";
+    };
+    buildPhase = ''
+      for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        rm -rf elm-stuff "$TMPDIR/elm-home"
+        ${old.buildPhase}
+      done
+    '';
+  });
   app-tests = app.tests;
   app-outputs =
     assert

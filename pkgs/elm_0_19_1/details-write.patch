@@ -1,0 +1,12 @@
+diff --git a/builder/src/Elm/Details.hs b/builder/src/Elm/Details.hs
+--- a/builder/src/Elm/Details.hs
++++ b/builder/src/Elm/Details.hs
+@@ -335,7 +335,7 @@ verifyDependencies env@(Env key scope root cache _ _ _) time outline solution dire
+           in
+           do  BW.writeBinary scope (Stuff.objects    root) objs
+               BW.writeBinary scope (Stuff.interfaces root) ifaces
+-              BW.writeBinary scope (Stuff.details    root) details
++              File.writeBinary (Stuff.details root) details
+               return (Right details)
+ 
+ 

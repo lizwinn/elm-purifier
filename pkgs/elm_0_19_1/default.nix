@@ -41,6 +41,10 @@ addBuildDepends
     overrideCabal (drv: {
       version = "0.19.1";
       inherit src;
+      # Build.writeDetails writes the same file before the background
+      # writer's scope ends. Finish the initial write before returning
+      # from dependency setup, so the two writes cannot race or deadlock.
+      patches = (drv.patches or [ ]) ++ [ ./details-write.patch ];
       preConfigure = ''
         export ELM_HOME="$PWD/.elm"
         cp -r --no-preserve=mode ${reactorHome} "$ELM_HOME"

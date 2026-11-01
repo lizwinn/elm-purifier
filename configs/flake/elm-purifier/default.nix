@@ -19,9 +19,9 @@
     # The scope `elm-purifier` is the `default` entry of this flake's package
     # overlay registry (pkg-overlays/): the package set applies it by
     # default, and the flake exports it as `pkgOverlays` and as the plain
-    # `overlays.default`. The flake's `packages` output names the packages
-    # of the scope, because the scope also holds the builder, which is a
-    # function.
+    # `overlays.default`. The flake's `packages` output holds the
+    # derivations of the scope, because the scope also holds the builder,
+    # which is a function.
     nixpkgs = {
       packages.export.enabled = false;
     };
@@ -32,15 +32,8 @@
   perSystem =
     { pkgs, ... }:
     {
-      packages = {
+      packages = lib.filterAttrs (_: lib.isDerivation) pkgs.elm-purifier // {
         default = pkgs.elm-purifier.cli;
-        inherit (pkgs.elm-purifier)
-          cli
-          elm_0_19_1
-          elm-test
-          elm-test_0_19_1
-          elm-test_0_19_1-revision9
-          ;
       };
     };
 

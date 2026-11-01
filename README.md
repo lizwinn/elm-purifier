@@ -42,6 +42,13 @@ nix build --impure --expr '
   (pkgs.elm-purifier.buildElmProject { src = ./.; }).packages.Main'
 ```
 
+This uses the purifier's pinned nixpkgs, matching the lock command above.
+To build with ambient `<nixpkgs>` from your Nix search path instead,
+replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
+Both forms need no Nix files in your project. The build tool and language
+versions must match the lockfile; with ambient nixpkgs, lock with the
+purifier from that package set or pass a compatible toolchain to the builder.
+
 `result/Main.js` is the compiled application. For a package, build
 `.packages.docs` instead, and for the tests, build `.tests`.
 

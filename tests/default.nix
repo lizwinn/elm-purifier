@@ -163,6 +163,10 @@ in
 {
   inherit cli;
 
+  toolchains =
+    assert import ./toolchains.nix;
+    runCommand "elm-toolchains" { } "touch $out";
+
   app-main = runsWorker "app-main" app.packages.Main "Main" "Hello, Nix!";
   app-report =
     runsWorker "app-report" app.packages."Report.Json" "Report.Json"

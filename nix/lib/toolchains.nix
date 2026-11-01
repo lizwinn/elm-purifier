@@ -24,11 +24,18 @@
     };
     elmTestOfflineArgs = [ ];
   };
-  ${elmPackages.elm.version} = {
-    inherit (elmPackages) elm;
-    elm-test = {
-      "2" = elm-purifier.elm-test;
-    };
-    elmTestOfflineArgs = [ "--offline" ];
-  };
 }
+// (
+  if elmPackages.elm.version == "0.19.1" then
+    { }
+  else
+    {
+      ${elmPackages.elm.version} = {
+        inherit (elmPackages) elm;
+        elm-test = {
+          "2" = elm-purifier.elm-test;
+        };
+        elmTestOfflineArgs = [ "--offline" ];
+      };
+    }
+)

@@ -16,21 +16,32 @@
       inherit (libOverlays) default;
     };
 
-    # The packages are the `default` entry of this flake's package overlay
-    # registry (pkg-overlays/): the package set applies it by default, and
-    # the flake exports it as `pkgOverlays` and as the plain
-    # `overlays.default`.
+    # The scope `elm-purifier` is the `default` entry of this flake's package
+    # overlay registry (pkg-overlays/): the package set applies it by
+    # default, and the flake exports it as `pkgOverlays` and as the plain
+    # `overlays.default`. The flake's `packages` output names the packages
+    # of the scope, because the scope also holds the builder, which is a
+    # function.
     nixpkgs = {
-      packages.export.enabled = true;
+      packages.export.enabled = false;
     };
   };
 
   # `nix run github:nix-purifiers/elm-purifier -- lock` locks the project
   # in the current directory.
   perSystem =
-    { config, ... }:
+    { pkgs, ... }:
     {
-      packages.default = config.packages.cli;
+      packages = {
+        default = pkgs.elm-purifier.cli;
+        inherit (pkgs.elm-purifier)
+          cli
+          elm_0_19_1
+          elm-test
+          elm-test_0_19_1
+          elm-test_0_19_1-revision9
+          ;
+      };
     };
 
   partitionedAttrs.checks = "checks";

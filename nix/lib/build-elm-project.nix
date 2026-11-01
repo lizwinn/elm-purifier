@@ -6,11 +6,11 @@
 # This file is a package for callPackage. It takes the packages it needs by
 # name: `stdenvNoCC`, `callPackage`, `elmPackages`, the scope `elm-purifier`
 # (the packages of pkgs/) and the shared library `purifier`. The default
-# overlay of the flake adds the builder it returns to the package set as
-# `buildElmProject`, so `buildElmProject.override` replaces any of them, and
-# a package written for callPackage takes the builder by name:
+# overlay of the flake adds the builder it returns to the scope as
+# `elm-purifier.buildElmProject`, so `.override` on the builder replaces any
+# of them, and a package written for callPackage takes the scope by name:
 #
-#   { buildElmProject }: (buildElmProject { src = ./.; }).packages.Main
+#   { elm-purifier }: (elm-purifier.buildElmProject { src = ./.; }).packages.Main
 #
 # Every attribute name of the result is known at evaluation time, from the
 # lockfile and elm.json. The result has

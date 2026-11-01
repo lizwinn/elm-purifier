@@ -28,14 +28,15 @@ cannot give: the SHA-256 of each package zip, the entry modules of an
 application, whether the lock covers the tests, a hash of `elm.json`, and a
 hash of the lockfile itself.
 
-The default overlay of the flake adds `buildElmProject` to the package set,
-where nixpkgs keeps its own builders. A package written for `callPackage`
-takes it by name:
+The default overlay of the flake adds one attribute to the package set, the
+scope `elm-purifier`. The scope holds the builder `buildElmProject`, the
+command and the Elm toolchains. A package written for `callPackage` takes
+the scope by name:
 
 ```nix
 # package.nix
-{ buildElmProject }:
-buildElmProject { src = ./.; }
+{ elm-purifier }:
+elm-purifier.buildElmProject { src = ./.; }
 ```
 
 ```nix
@@ -97,11 +98,13 @@ The builder takes these arguments:
 - `elm`, `elm-test` and `srcFilter`, to replace the toolchain or the source
   filter.
 
-`buildElmProject.override` replaces what the builder takes from the package
-set: `stdenvNoCC`, `elmPackages`, the scope `elm-purifier` and the shared
-library `purifier`. `elm-purifier.lib.elm-purifier.readLock { src,
-subdirectory, lockFile }` returns the lock in the shape of the contract, for
-tools that read every purifier.
+`elm-purifier.buildElmProject.override` replaces what the builder takes from
+the package set: `stdenvNoCC`, `elmPackages`, the scope `elm-purifier` and
+the shared library `purifier`. `elm-purifier.overrideScope` replaces what
+everything in the scope shares, such as the Elm toolchains.
+`elm-purifier.lib.elm-purifier.readLock { src, subdirectory, lockFile }` in
+the flake returns the lock in the shape of the contract, for tools that read
+every purifier.
 
 ## Development loop
 
@@ -286,7 +289,7 @@ The flake takes list-extra as an input, and passes the lockfile beside it:
         inherit system;
         overlays = [ elm-purifier.overlays.default ];
       };
-      project = pkgs.buildElmProject {
+      project = pkgs.elm-purifier.buildElmProject {
         src = list-extra;
         lockFile = ./list-extra.lock.json;
       };

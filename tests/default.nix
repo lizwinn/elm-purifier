@@ -9,7 +9,7 @@
 # (tests/conformance-relock.sh).
 {
   # A package set with the default overlay of this flake applied, which has
-  # `buildElmProject`.
+  # the scope `elm-purifier` with `buildElmProject`.
   pkgs,
   cli,
   # The source of the shared purifier library, as pinned in flake.lock.
@@ -18,7 +18,7 @@
 let
   inherit (pkgs) lib runCommand nodejs;
   purifier = import purifierSrc { inherit lib; };
-  build = pkgs.buildElmProject;
+  build = pkgs.elm-purifier.buildElmProject;
 
   app = build { src = ./fixtures/app; };
   package = build { src = ./fixtures/package; };

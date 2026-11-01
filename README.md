@@ -212,11 +212,12 @@ names. Every elm-test package of this flake puts its socket in the
 directory that `TMPDIR` names, where upstream elm-test uses a fixed path
 under `/tmp`.
 
-## Real-world projects
+## Examples
 
-CI builds these published projects at a pinned commit from lockfiles under
-`tests/real-world`, runs their tests, and locks them again to compare the
-result with the committed lockfile:
+CI locks and builds two published projects at a pinned commit, as examples
+of elm-purifier at work. It runs their tests, and locks them again to
+compare the result with the lockfiles under `tests/real-world`. The
+examples are not a list of the projects that elm-purifier supports.
 
 - [rtfeldman/elm-spa-example](https://github.com/rtfeldman/elm-spa-example)
   at `cb32acd`, an Elm 0.19.1 single-page application that uses
@@ -260,7 +261,7 @@ The flake has these checks on both systems, and CI runs them:
 
 Two checks need the package server, so they run in CI as jobs of the same
 name. `tests/conformance-relock.sh` locks every fixture, the reactor of the
-compiler and both real-world projects again, and compares each result with
+compiler and both example projects again, and compares each result with
 the committed lockfile. `tests/conformance-update.sh` updates a fixture
 that pins an old `elm/json`, and checks that `elm.json` and the lockfile
 then pass the stale check.

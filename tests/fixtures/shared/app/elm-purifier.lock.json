@@ -1,0 +1,33 @@
+{
+  "downloads": [
+    {
+      "archive": {
+        "mirrors": [],
+        "stripTop": true,
+        "url": "https://github.com/elm/core/zipball/1.0.5/"
+      },
+      "hash": "sha256-HRUjmHa22scI1OKhBxbkM9R6gtQdDamemlnO/064z9U=",
+      "path": "elm/core/1.0.5"
+    },
+    {
+      "archive": {
+        "mirrors": [],
+        "stripTop": true,
+        "url": "https://github.com/elm/json/zipball/1.1.4/"
+      },
+      "hash": "sha256-JV7IM9UDeS3S9fdZCdE+QPsQYaTJejeVUCe+u8+Nhds=",
+      "path": "elm/json/1.1.4"
+    }
+  ],
+  "elmJson": "sha256-J/ss982HrsnhYzfSh09L/zRJnER4205mUfe1jm/0buA=",
+  "elmVersion": "0.19.2",
+  "outputs": {
+    "applications": {
+      "Main": {
+        "main": "src/Main.elm"
+      }
+    }
+  },
+  "tests": false,
+  "version": 1
+}

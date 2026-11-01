@@ -1,0 +1,147 @@
+{
+  "downloads": [
+    {
+      "archive": {
+        "mirrors": [],
+        "stripTop": true,
+        "url": "https://github.com/elm/browser/zipball/1.0.1/"
+      },
+      "hash": "sha256-/OoYXwqKAGLsk8liUhqfxcaHlmXIfRlfxO2pP7DILaQ=",
+      "path": "elm/browser/1.0.1"
+    },
+    {
+      "archive": {
+        "mirrors": [],
+        "stripTop": true,
+        "url": "https://github.com/elm/bytes/zipball/1.0.7/"
+      },
+      "hash": "sha256-H9Y0xDdRbdayuO48DQ9SiQoU8DgeUIiP9Uq57Z/zP20=",
+      "path": "elm/bytes/1.0.7"
+    },
+    {
+      "archive": {
+        "mirrors": [],
+        "stripTop": true,
+        "url": "https://github.com/elm/core/zipball/1.0.2/"
+      },
+      "hash": "sha256-mq4c18f80I3vqbHukVscpHtu7Kvml35AXnYyBurPm2M=",
+      "path": "elm/core/1.0.2"
+    },
+    {
+      "archive": {
+        "mirrors": [],
+        "stripTop": true,
+        "url": "https://github.com/elm/file/zipball/1.0.1/"
+      },
+      "hash": "sha256-VIkFJQRN+jPqCh8OcV1DYQ7cowxU8O5DJxLYyd6IrG8=",
+      "path": "elm/file/1.0.1"
+    },
+    {
+      "archive": {
+        "mirrors": [],
+        "stripTop": true,
+        "url": "https://github.com/elm/html/zipball/1.0.0/"
+      },
+      "hash": "sha256-eKvA3GWOSZTzOTSC2apEuKzmn9xfpHr2y+y9WHOB4BM=",
+      "path": "elm/html/1.0.0"
+    },
+    {
+      "archive": {
+        "mirrors": [],
+        "stripTop": true,
+        "url": "https://github.com/elm/http/zipball/2.0.0/"
+      },
+      "hash": "sha256-JoQPS8BcwUT9GdjFTlxkkrBnoYQuiVewJtk3EsYoQv4=",
+      "path": "elm/http/2.0.0"
+    },
+    {
+      "archive": {
+        "mirrors": [],
+        "stripTop": true,
+        "url": "https://github.com/elm/json/zipball/1.1.2/"
+      },
+      "hash": "sha256-2eQzD9eejYCmQ5nYlwSrkhxWYTcVLMowQshjtkDAvDY=",
+      "path": "elm/json/1.1.2"
+    },
+    {
+      "archive": {
+        "mirrors": [],
+        "stripTop": true,
+        "url": "https://github.com/elm/parser/zipball/1.1.0/"
+      },
+      "hash": "sha256-IOMgd+VMi7VGujZ0KBTmQQaB6UJEuvqUanZ0Upy6pEg=",
+      "path": "elm/parser/1.1.0"
+    },
+    {
+      "archive": {
+        "mirrors": [],
+        "stripTop": true,
+        "url": "https://github.com/elm/project-metadata-utils/zipball/1.0.0/"
+      },
+      "hash": "sha256-zgSMrpOi6emaXbisVDW0zgRIrPjVZ89Eu+bAhMGoqoI=",
+      "path": "elm/project-metadata-utils/1.0.0"
+    },
+    {
+      "archive": {
+        "mirrors": [],
+        "stripTop": true,
+        "url": "https://github.com/elm/svg/zipball/1.0.1/"
+      },
+      "hash": "sha256-fv6vmYLVZC2x63PKC9Mj+oZoQ/8OMwwtAlDc6TVN4OA=",
+      "path": "elm/svg/1.0.1"
+    },
+    {
+      "archive": {
+        "mirrors": [],
+        "stripTop": true,
+        "url": "https://github.com/elm/time/zipball/1.0.0/"
+      },
+      "hash": "sha256-VCPZFEzmrR+sAtp1bp8PwDz8BBmqvDF9pUSFw7Nkr5w=",
+      "path": "elm/time/1.0.0"
+    },
+    {
+      "archive": {
+        "mirrors": [],
+        "stripTop": true,
+        "url": "https://github.com/elm/url/zipball/1.0.0/"
+      },
+      "hash": "sha256-N521TsAVDf2I4pLOQIISdnjvTIFOnXcyT4qpsaqXr1E=",
+      "path": "elm/url/1.0.0"
+    },
+    {
+      "archive": {
+        "mirrors": [],
+        "stripTop": true,
+        "url": "https://github.com/elm/virtual-dom/zipball/1.0.2/"
+      },
+      "hash": "sha256-Esu23v5f7R90gW5Un5q9GshqU+ikyJjwRSQaPZJk+9Q=",
+      "path": "elm/virtual-dom/1.0.2"
+    },
+    {
+      "archive": {
+        "mirrors": [],
+        "stripTop": true,
+        "url": "https://github.com/elm-explorations/markdown/zipball/1.0.0/"
+      },
+      "hash": "sha256-IO7pp09bKJgtVhY6G39TmnA9C7O5BNmH9NrsFYnw2gk=",
+      "path": "elm-explorations/markdown/1.0.0"
+    }
+  ],
+  "elmJson": "sha256-62XQVaCT7cmvcRm1OTpDoGZlk+AKLx1TIMAfI4orO6E=",
+  "elmVersion": "0.19.1",
+  "outputs": {
+    "applications": {
+      "Errors": {
+        "main": "src/Errors.elm"
+      },
+      "Index": {
+        "main": "src/Index.elm"
+      },
+      "NotFound": {
+        "main": "src/NotFound.elm"
+      }
+    }
+  },
+  "tests": false,
+  "version": 1
+}

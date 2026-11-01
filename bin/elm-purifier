@@ -1,0 +1,395 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+"""elm-purifier: locks the packages an Elm project downloads, so that Nix
+can build the project offline in its sandbox.
+
+    elm-purifier lock [--main FILE]... [--tests | --no-tests]
+        Runs the Elm compiler (and elm-test, when the project has tests)
+        with an empty ELM_HOME, records every package they download, and
+        writes elm-purifier.lock.json beside elm.json.
+    elm-purifier relock
+        Locks again, with the entry modules and the test setting that the
+        current lockfile records.
+    elm-purifier elm ARGS...
+        Runs the Elm compiler on the locked packages, offline.
+    elm-purifier test ARGS...
+        Runs elm-test on the locked packages, offline.
+    elm-purifier publish
+        Runs `elm publish` on the locked packages.
+
+The wrapper sets ELM_PURIFIER_TOOLCHAINS (a JSON object from compiler
+version to the `elm` and `elm-test` executables for it), ELM_PURIFIER_LIB
+(the Nix library) and ELM_PURIFIER_NIXPKGS (the nixpkgs that the locked
+packages are realized with).
+"""
+
+import base64
+import hashlib
+import json
+import os
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import urllib.request
+
+LOCK_NAME = "elm-purifier.lock.json"
+PACKAGE_SERVER = "https://package.elm-lang.org"
+STATE_DIR = os.path.join("elm-stuff", "elm-purifier")
+
+
+def fail(message):
+    print(f"elm-purifier: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+def note(message):
+    print(f"elm-purifier: {message}", file=sys.stderr)
+
+
+def lock_version():
+    path = os.path.join(os.environ["ELM_PURIFIER_LIB"], "lock-version.nix")
+    with open(path) as f:
+        lines = [line for line in f if not line.lstrip().startswith("#")]
+    return int("".join(lines).strip())
+
+
+def toolchains():
+    return json.loads(os.environ["ELM_PURIFIER_TOOLCHAINS"])
+
+
+def version_key(version):
+    return tuple(int(part) for part in version.split("."))
+
+
+def satisfies(version, constraint):
+    """Whether a version satisfies an elm.json constraint, such as
+    "0.19.0 <= v < 0.20.0", or equals an exact version."""
+    match = re.fullmatch(r"\s*(\S+)\s*(<=|<)\s*v\s*(<=|<)\s*(\S+)\s*", constraint)
+    if not match:
+        return version == constraint.strip()
+    low, low_op, high_op, high = match.groups()
+    v = version_key(version)
+    low_ok = v >= version_key(low) if low_op == "<=" else v > version_key(low)
+    high_ok = v <= version_key(high) if high_op == "<=" else v < version_key(high)
+    return low_ok and high_ok
+
+
+def select_compiler(elm_json):
+    """The compiler a project builds with: the exact version an
+    application names, or the newest version a package's range admits."""
+    available = sorted(toolchains(), key=version_key, reverse=True)
+    wanted = elm_json["elm-version"]
+    for version in available:
+        if satisfies(version, wanted):
+            return version
+    fail(
+        f'elm.json asks for Elm "{wanted}", and this elm-purifier provides '
+        f"{', '.join(available)}."
+    )
+
+
+def sri_sha256(data):
+    return "sha256-" + base64.b64encode(hashlib.sha256(data).digest()).decode()
+
+
+def file_sri(path):
+    with open(path, "rb") as f:
+        return sri_sha256(f.read())
+
+
+def read_json(path):
+    with open(path) as f:
+        return json.load(f)
+
+
+def find_project():
+    project = os.getcwd()
+    if not os.path.exists(os.path.join(project, "elm.json")):
+        fail("run elm-purifier in the directory that holds elm.json.")
+    return project
+
+
+MODULE_RE = re.compile(r"^(?:port\s+|effect\s+)?module\s+([A-Z][A-Za-z0-9_.]*)", re.M)
+MAIN_RE = re.compile(r"^main\s*[:=]", re.M)
+
+
+def module_name(path):
+    with open(path, encoding="utf-8") as f:
+        match = MODULE_RE.search(f.read())
+    if not match:
+        fail(f"{path} has no module declaration.")
+    return match.group(1)
+
+
+def find_mains(project, elm_json):
+    """The modules under the source directories that define `main`."""
+    mains = []
+    for directory in elm_json["source-directories"]:
+        root = os.path.normpath(os.path.join(project, directory))
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = sorted(d for d in dirnames if d != "elm-stuff")
+            for filename in sorted(filenames):
+                if not filename.endswith(".elm"):
+                    continue
+                path = os.path.join(dirpath, filename)
+                with open(path, encoding="utf-8") as f:
+                    if MAIN_RE.search(f.read()):
+                        mains.append(os.path.relpath(path, project))
+    return mains
+
+
+def http_get(url):
+    request = urllib.request.Request(url, headers={"User-Agent": "elm-purifier"})
+    with urllib.request.urlopen(request) as response:
+        return response.read()
+
+
+def installed_packages(home, compiler_version):
+    """The author/project/version directories under a package cache."""
+    root = os.path.join(home, compiler_version, "packages")
+    found = []
+    if not os.path.isdir(root):
+        return found
+    for author in sorted(os.listdir(root)):
+        author_dir = os.path.join(root, author)
+        if not os.path.isdir(author_dir):
+            continue
+        for project in sorted(os.listdir(author_dir)):
+            for version in sorted(os.listdir(os.path.join(author_dir, project))):
+                found.append(f"{author}/{project}/{version}")
+    return found
+
+
+class FreshElmStuff:
+    """Moves the project's elm-stuff aside while the lock run uses a fresh
+    one, and puts it back afterwards."""
+
+    def __init__(self, project):
+        self.path = os.path.join(project, "elm-stuff")
+        self.saved = self.path + ".elm-purifier-saved"
+
+    def __enter__(self):
+        if os.path.exists(self.saved):
+            fail(f"{self.saved} is left from an interrupted lock run; move it back to elm-stuff first.")
+        if os.path.exists(self.path):
+            os.rename(self.path, self.saved)
+        return self
+
+    def __exit__(self, *exc):
+        shutil.rmtree(self.path, ignore_errors=True)
+        if os.path.exists(self.saved):
+            os.rename(self.saved, self.path)
+        return False
+
+
+def elm_test_command(toolchain, offline):
+    """The toolchain's elm-test with its compiler. elm-test solves the test
+    dependencies itself, from Node; on a locked package cache it runs with
+    the arguments that keep it from asking the package server."""
+    command = [toolchain["elm-test"], "--compiler", toolchain["elm"]]
+    return command + toolchain["elm-test-offline-args"] if offline else command
+
+
+def run_tools(project, elm_json, toolchain, mains, tests, home, offline):
+    """Runs what the Nix build runs, with ELM_HOME at `home`: the compiler
+    on every entry module (or on the package's documentation), and
+    elm-test on the tests. Node uses a proxy from the environment only with
+    NODE_USE_ENV_PROXY, which makes elm-test reach the network the way the
+    compiler does."""
+    env = dict(os.environ, ELM_HOME=home, NODE_USE_ENV_PROXY="1")
+    elm = toolchain["elm"]
+    with FreshElmStuff(project):
+        if elm_json["type"] == "application":
+            if mains:
+                subprocess.run(
+                    [elm, "make", *mains, "--output=/dev/null"], cwd=project, env=env, check=True
+                )
+        else:
+            docs = os.path.join(home, "docs.json")
+            subprocess.run([elm, "make", f"--docs={docs}"], cwd=project, env=env, check=True)
+        if tests:
+            command = elm_test_command(toolchain, offline)
+            subprocess.run([command[0], "make", *command[1:]], cwd=project, env=env, check=True)
+
+
+def record(package):
+    """The download entry of an author/project/version: the zip archive
+    the package server names, with the SHA-256 of the zip."""
+    endpoint = json.loads(http_get(f"{PACKAGE_SERVER}/packages/{package}/endpoint.json"))
+    archive = http_get(endpoint["url"])
+    if hashlib.sha1(archive).hexdigest() != endpoint["hash"]:
+        fail(f"the archive of {package} at {endpoint['url']} does not match the package server's hash.")
+    return {
+        "path": package,
+        "archive": {"url": endpoint["url"], "mirrors": [], "stripTop": True},
+        "hash": sri_sha256(archive),
+    }
+
+
+def realize(lock_path, out_link=None):
+    """Builds the package cache of a lockfile with Nix and returns its
+    store path."""
+    command = [
+        "nix-build",
+        os.path.join(os.environ["ELM_PURIFIER_LIB"], "realize.nix"),
+        "--arg",
+        "lockFile",
+        os.path.abspath(lock_path),
+        "--arg",
+        "nixpkgs",
+        os.environ["ELM_PURIFIER_NIXPKGS"],
+    ]
+    command += ["--out-link", out_link] if out_link else ["--no-out-link"]
+    result = subprocess.run(command, check=True, stdout=subprocess.PIPE, text=True)
+    return result.stdout.strip().splitlines()[-1]
+
+
+def writable_copy(source, destination):
+    shutil.rmtree(destination, ignore_errors=True)
+    shutil.copytree(source, destination, symlinks=False)
+    for dirpath, dirnames, filenames in os.walk(destination):
+        os.chmod(dirpath, os.stat(dirpath).st_mode | stat.S_IWUSR)
+        for name in filenames:
+            path = os.path.join(dirpath, name)
+            os.chmod(path, os.stat(path).st_mode | stat.S_IWUSR)
+
+
+def lock(mains, tests):
+    project = find_project()
+    elm_json_path = os.path.join(project, "elm.json")
+    elm_json = read_json(elm_json_path)
+    compiler_version = select_compiler(elm_json)
+    toolchain = toolchains()[compiler_version]
+    if elm_json["type"] == "application" and not mains:
+        mains = find_mains(project, elm_json)
+        if not mains:
+            fail("found no module that defines `main`; name the entry modules with --main.")
+    if elm_json["type"] == "package" and mains:
+        fail("--main applies to applications; a package's output is its documentation.")
+    if tests is None:
+        tests = os.path.isdir(os.path.join(project, "tests"))
+
+    work = tempfile.mkdtemp(prefix="elm-purifier-lock-")
+    try:
+        home = os.path.join(work, "home")
+        note(f"running Elm {compiler_version} with an empty ELM_HOME")
+        run_tools(project, elm_json, toolchain, mains, tests, home, offline=False)
+        packages = installed_packages(home, compiler_version)
+        note(f"recording {len(packages)} packages")
+        downloads = [record(package) for package in packages]
+
+        lock_data = {
+            "version": lock_version(),
+            "elmVersion": compiler_version,
+            "elmJson": file_sri(elm_json_path),
+            "tests": tests,
+            "outputs": {
+                "applications": {
+                    module_name(os.path.join(project, main)): {"main": main} for main in mains
+                }
+            },
+            "downloads": downloads,
+        }
+        candidate = os.path.join(work, LOCK_NAME)
+        with open(candidate, "w") as f:
+            json.dump(lock_data, f, indent=2, sort_keys=True)
+            f.write("\n")
+
+        # The check: the same tools on the cache Nix builds from the
+        # lockfile download nothing more.
+        note("checking the lockfile against a package cache built by Nix")
+        realized = realize(candidate)
+        offline = os.path.join(work, "offline-home")
+        writable_copy(realized, offline)
+        run_tools(project, elm_json, toolchain, mains, tests, offline, offline=True)
+        extra = sorted(set(installed_packages(offline, compiler_version)) - set(packages))
+        if extra:
+            fail(f"the second run downloaded packages the first did not: {', '.join(extra)}")
+        shutil.copyfile(candidate, os.path.join(project, LOCK_NAME))
+        note(f"wrote {LOCK_NAME}")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def relock():
+    project = find_project()
+    path = os.path.join(project, LOCK_NAME)
+    if not os.path.exists(path):
+        fail(f"there is no {LOCK_NAME} to relock; run `elm-purifier lock`.")
+    current = read_json(path)
+    mains = [entry["main"] for entry in current["outputs"]["applications"].values()]
+    lock(sorted(mains), current["tests"])
+
+
+def locked_home(project):
+    """ELM_HOME for the interactive commands: a writable copy of the cache
+    Nix builds from the lockfile, kept alive by a GC root in elm-stuff.
+    None when there is no lockfile or elm.json changed since it was made."""
+    path = os.path.join(project, LOCK_NAME)
+    if not os.path.exists(path):
+        note(f"there is no {LOCK_NAME}; running with the usual ELM_HOME. Run `elm-purifier lock`.")
+        return None
+    current = read_json(path)
+    if current["elmJson"] != file_sri(os.path.join(project, "elm.json")):
+        note(f"elm.json changed since {LOCK_NAME} was made; running with the usual ELM_HOME. Run `elm-purifier relock`.")
+        return None
+    state = os.path.join(project, STATE_DIR)
+    os.makedirs(state, exist_ok=True)
+    realized = realize(path, out_link=os.path.join(state, "cache-root"))
+    home = os.path.join(state, "home")
+    marker = os.path.join(home, ".source")
+    if not os.path.exists(marker) or open(marker).read() != realized:
+        writable_copy(realized, home)
+        with open(marker, "w") as f:
+            f.write(realized)
+    return current["elmVersion"], home
+
+
+def run_locked(make_command):
+    project = find_project()
+    elm_json = read_json(os.path.join(project, "elm.json"))
+    located = locked_home(project)
+    env = dict(os.environ)
+    if located:
+        compiler_version, env["ELM_HOME"] = located
+    else:
+        compiler_version = select_compiler(elm_json)
+    command = make_command(toolchains()[compiler_version], located is not None)
+    os.execvpe(command[0], command, env)
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help"):
+        print(__doc__)
+        return
+    verb, rest = argv[0], argv[1:]
+    if verb == "lock":
+        mains, tests = [], None
+        args = iter(rest)
+        for arg in args:
+            if arg == "--main":
+                mains.append(next(args, None) or fail("--main needs a file"))
+            elif arg == "--tests":
+                tests = True
+            elif arg == "--no-tests":
+                tests = False
+            else:
+                fail(f"lock does not take {arg}")
+        lock(mains, tests)
+    elif verb == "relock":
+        relock()
+    elif verb == "elm":
+        run_locked(lambda toolchain, locked: [toolchain["elm"], *rest])
+    elif verb == "test":
+        run_locked(lambda toolchain, locked: [*elm_test_command(toolchain, offline=locked), *rest])
+    elif verb == "publish":
+        run_locked(lambda toolchain, locked: [toolchain["elm"], "publish", *rest])
+    else:
+        fail(f"unknown command {verb}; see `elm-purifier --help`.")
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

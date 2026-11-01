@@ -28,16 +28,28 @@ cannot give: the SHA-256 of each package zip, the entry modules of an
 application, whether the lock covers the tests, a hash of `elm.json`, and a
 hash of the lockfile itself.
 
+Then build the project from its directory. The project gets no Nix file:
+
+```zsh
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.elm-purifier.buildElmProject { src = ./.; }).packages.Main'
+```
+
+`result/Main.js` is the compiled application. For a package, build
+`.packages.docs` instead, and for the tests, build `.tests`.
+
 The default overlay of the flake adds one attribute to the package set, the
 scope `elm-purifier`. The scope holds the builder `buildElmProject`, the
-command and the Elm toolchains. A package written for `callPackage` takes
-the scope by name:
-
-```nix
-# package.nix
-{ elm-purifier }:
-elm-purifier.buildElmProject { src = ./.; }
-```
+command and the Elm toolchains. A flake that packages the project, for a
+project whose authors want one, calls the builder directly. It can live in
+the repository of the project or in another one:
 
 ```nix
 # flake.nix
@@ -52,7 +64,7 @@ elm-purifier.buildElmProject { src = ./.; }
         inherit system;
         overlays = [ elm-purifier.overlays.default ];
       };
-      project = pkgs.callPackage ./package.nix { };
+      project = pkgs.elm-purifier.buildElmProject { src = ./.; };
     in
     {
       packages.${system}.default = project.packages.Main;
@@ -61,10 +73,10 @@ elm-purifier.buildElmProject { src = ./.; }
 }
 ```
 
-`nix build` writes `result/Main.js`. A flake sees only files that git
-tracks, so run `git add flake.nix package.nix elm-purifier.lock.json`
-first. Every attribute name of the builder's result is known when Nix
-evaluates:
+A flake sees only files that git tracks, so run `git add flake.nix
+elm-purifier.lock.json` before `nix build`. A package in an overlay takes
+the scope by name with `{ elm-purifier }:`. Every attribute name of the
+builder's result is known when Nix evaluates:
 
 | Attribute | What it is |
 | --- | --- |
@@ -238,72 +250,67 @@ flake puts its socket in the directory that `TMPDIR` names.
 ### An application: elm-spa-example
 
 [elm-spa-example](https://github.com/rtfeldman/elm-spa-example) is a
-single-page application. In a clone of it, write the lockfile:
+single-page application. In a clone of it, write the lockfile and build the
+application and its tests:
 
 ```zsh
 git clone https://github.com/rtfeldman/elm-spa-example
 cd elm-spa-example
 nix run github:nix-purifiers/elm-purifier -- lock
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.elm-purifier.buildElmProject { src = ./.; }).packages.Main'
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.elm-purifier.buildElmProject { src = ./.; }).tests'
 ```
 
-Add the `package.nix` and `flake.nix` of the Quickstart, run `git add
-flake.nix package.nix elm-purifier.lock.json`, and build:
-
-```zsh
-nix build
-nix flake check
-```
-
-`result/Main.js` is the compiled application, and `nix flake check` runs
-its tests.
+`result/Main.js` is the compiled application, and the second build runs its
+tests.
 
 ### A package: list-extra
 
-[list-extra](https://github.com/elm-community/list-extra) is a package. In
-your own project you commit the lockfile, as in the first example. To build
-a package whose repository you do not change, a flake can keep the lockfile
-instead, beside a flake input for the source:
+[list-extra](https://github.com/elm-community/list-extra) is a package. In a
+clone of it, write the lockfile and build the documentation and the tests:
 
 ```zsh
-mkdir packaging && cd packaging
-git clone https://github.com/elm-community/list-extra ../list-extra
-(cd ../list-extra && nix run github:nix-purifiers/elm-purifier -- lock --lockfile ../packaging/list-extra.lock.json)
-```
-
-The flake takes list-extra as an input, and passes the lockfile beside it:
-
-```nix
-# flake.nix
-{
-  inputs.elm-purifier.url = "github:nix-purifiers/elm-purifier";
-  inputs.nixpkgs.follows = "elm-purifier/nixpkgs";
-  inputs.list-extra = {
-    url = "github:elm-community/list-extra";
-    flake = false;
-  };
-
-  outputs = { nixpkgs, elm-purifier, list-extra, ... }:
-    let
-      system = "x86_64-linux";
-      pkgs = import nixpkgs {
-        inherit system;
-        overlays = [ elm-purifier.overlays.default ];
-      };
-      project = pkgs.elm-purifier.buildElmProject {
-        src = list-extra;
-        lockFile = ./list-extra.lock.json;
-      };
-    in
-    {
-      packages.${system}.default = project.packages.docs;
-      checks.${system}.tests = project.tests;
+git clone https://github.com/elm-community/list-extra
+cd list-extra
+nix run github:nix-purifiers/elm-purifier -- lock
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
     };
-}
+  in
+  (pkgs.elm-purifier.buildElmProject { src = ./.; }).packages.docs'
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.elm-purifier.buildElmProject { src = ./.; }).tests'
 ```
 
-After `git add flake.nix list-extra.lock.json`, `nix build` writes the
-package documentation to `result/docs.json`, and `nix flake check` runs the
-tests of list-extra.
+`result/docs.json` is the documentation of the package, and the second build
+runs its tests.
 
 ## Credits
 

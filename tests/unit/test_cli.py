@@ -14,6 +14,8 @@ import io
 import json
 import os
 import struct
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -219,6 +221,46 @@ class LockFormat(unittest.TestCase):
         self.assertEqual(
             cli.gc_root("/p/elm-purifier.lock.json"), "/p/.elm-purifier.lock.json.gcroot"
         )
+
+
+class ElmRaces(unittest.TestCase):
+    """run_elm_tool starts a tool again when it fails with a race inside the
+    Elm compiler, and not for any other failure."""
+
+    def tool(self, script):
+        project = tempfile.mkdtemp()
+        os.makedirs(os.path.join(project, "elm-stuff"))
+        return project, [sys.executable, "-I", "-c", script]
+
+    def test_a_race_is_run_again_with_a_fresh_elm_stuff(self):
+        project, command = self.tool(
+            "import os, sys\n"
+            "if os.path.exists('elm-stuff/attempted'):\n"
+            "    sys.exit('this attempt found the old elm-stuff')\n"
+            "os.makedirs('elm-stuff', exist_ok=True)\n"
+            "open('elm-stuff/attempted', 'w').close()\n"
+            "if not os.path.exists('../second-attempt-marker'):\n"
+            "    open('../second-attempt-marker', 'w').close()\n"
+            "    sys.exit('d.dat: withBinaryFile: resource busy (file is locked)')\n"
+        )
+        # The marker lies beside the project, so the second attempt finds it.
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            cli.run_elm_tool(command, project, dict(os.environ))
+        self.assertIn("running it again", errors.getvalue())
+
+    def test_another_failure_is_not_run_again(self):
+        project, command = self.tool("import sys; sys.exit('a type error')")
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            with self.assertRaises(subprocess.CalledProcessError):
+                cli.run_elm_tool(command, project, dict(os.environ))
+        self.assertNotIn("running it again", errors.getvalue())
+
+    def test_a_race_that_repeats_fails_after_the_attempts(self):
+        project, command = self.tool("import sys; sys.exit('thread blocked indefinitely in an MVar operation')")
+        with contextlib.redirect_stderr(io.StringIO()) as errors:
+            with self.assertRaises(subprocess.CalledProcessError):
+                cli.run_elm_tool(command, project, dict(os.environ))
+        self.assertEqual(errors.getvalue().count("running it again"), cli.ELM_ATTEMPTS - 1)
 
 
 class PackageCache(unittest.TestCase):

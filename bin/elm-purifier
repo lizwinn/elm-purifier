@@ -309,6 +309,36 @@ def elm_test_command(toolchain, elm_json, offline):
     return command + toolchain["elm-test-offline-args"] if offline else command
 
 
+# The errors that the Elm compiler reports when its own threads collide
+# while it writes the cache of a project's dependencies. The same compile
+# succeeds when it runs again.
+ELM_RACES = ("resource busy (file is locked)", "blocked indefinitely in an MVar operation")
+ELM_ATTEMPTS = 4
+
+
+def run_elm_tool(command, project, env):
+    """Runs a tool of the lock run, and runs it again with a fresh
+    elm-stuff when it fails with one of ELM_RACES. Its output goes to the
+    terminal as it arrives."""
+    for attempt in range(1, ELM_ATTEMPTS + 1):
+        proc = subprocess.Popen(
+            command, cwd=project, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, errors="replace",
+        )
+        output = []
+        for line in proc.stdout:
+            sys.stderr.write(line)
+            output.append(line)
+        status = proc.wait()
+        if status == 0:
+            return
+        if attempt < ELM_ATTEMPTS and any(race in "".join(output) for race in ELM_RACES):
+            note(f"{os.path.basename(command[0])} failed on a race inside the Elm compiler; running it again")
+            shutil.rmtree(os.path.join(project, "elm-stuff"), ignore_errors=True)
+            continue
+        raise subprocess.CalledProcessError(status, command)
+
+
 def run_tools(project, elm_json, toolchain, mains, tests, home, offline):
     """Runs what the Nix build runs, with ELM_HOME at `home`: the compiler
     on every entry module (or on the package's documentation), and
@@ -320,15 +350,13 @@ def run_tools(project, elm_json, toolchain, mains, tests, home, offline):
     with FreshElmStuff(project):
         if elm_json["type"] == "application":
             if mains:
-                subprocess.run(
-                    [elm, "make", *mains, "--output=/dev/null"], cwd=project, env=env, check=True
-                )
+                run_elm_tool([elm, "make", *mains, "--output=/dev/null"], project, env)
         else:
             docs = os.path.join(home, "docs.json")
-            subprocess.run([elm, "make", f"--docs={docs}"], cwd=project, env=env, check=True)
+            run_elm_tool([elm, "make", f"--docs={docs}"], project, env)
         if tests:
             command = elm_test_command(toolchain, elm_json, offline)
-            subprocess.run([command[0], "make", *command[1:]], cwd=project, env=env, check=True)
+            run_elm_tool([command[0], "make", *command[1:]], project, env)
 
 
 def archive_url(package):

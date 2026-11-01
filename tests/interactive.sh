@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
 #
-# Tests what runs outside the Nix sandbox: the lock run, the interactive
-# commands on the locked packages, and the publish check. Run it from the
-# repository root; the lock run needs the network.
+# Tests the developer's loop on a real project, outside the Nix sandbox:
+# prefetch, then the tools it links on the locked packages, the editor,
+# the stale-lockfile messages and the publish check. The sandboxed
+# equivalent on a fixture is the conformance-offline check. Run it from the
+# repository root; prefetch needs the network.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 root=$PWD
@@ -16,78 +18,65 @@ fail() {
   exit 1
 }
 
-# The package directories under the interactive ELM_HOME of a project.
+# The package directories under the ELM_HOME that prefetch keeps for a
+# project.
 installed() {
   (cd "$1/elm-stuff/elm-purifier/home" && find . -mindepth 5 -maxdepth 5 -type d -path './*/packages/*' | sort)
 }
 
-# The package directories a lockfile records.
-locked() {
-  nix shell 'nixpkgs#jq' -c jq -r --arg v "$(nix shell 'nixpkgs#jq' -c jq -r .elmVersion "$1")" \
-    '.downloads[].path | "./\($v)/packages/\(.)"' "$1" | sort
+# The real application and the real package, at their pinned commits.
+project_of() {
+  nix flake prefetch --json "github:$1" | nix shell 'nixpkgs#jq' -c jq -r .storePath
 }
+spa="$work/elm-spa-example"
+cp -r "$(project_of rtfeldman/elm-spa-example/cb32acd73c3d346d0064e7923049867d8ce67193)" "$spa"
+chmod -R u+w "$spa"
+cp tests/real-world/elm-spa-example/elm-purifier.lock.json "$spa/"
+cp -r tests/fixtures/package "$work/package"
+chmod -R u+w "$work/package"
 
-cp -r tests/fixtures/app tests/fixtures/package tests/fixtures/shared "$work/"
-chmod -R u+w "$work"
+echo "== prefetch, then the compiler and the tests run on the locked packages"
+(cd "$spa" && "$cli" prefetch)
+bin="$spa/elm-stuff/elm-purifier/bin"
+(cd "$spa" && PATH="$bin:$PATH" elm make src/Main.elm --output="$work/spa.js")
+(cd "$spa" && PATH="$bin:$PATH" elm-test)
+locked=$(nix shell 'nixpkgs#jq' -c jq -r '.hashes | keys[]' "$spa/elm-purifier.lock.json" | wc -l)
+[ "$(installed "$spa" | wc -l)" -eq "$locked" ] || fail "the project holds packages the lock does not record"
 
-echo "== the lock run reproduces each committed lockfile"
-for project in app package shared/app; do
-  (cd "$work/$project" && "$cli" lock)
-  cmp "$work/$project/elm-purifier.lock.json" "tests/fixtures/$project/elm-purifier.lock.json" ||
-    fail "the lock of $project differs from the committed one"
-done
+echo "== elm-format runs"
+cp "$spa/src/Main.elm" "$work/Main.elm"
+(cd "$spa" && PATH="$bin:$PATH" elm-format --yes "$work/Main.elm" >/dev/null)
+grep -q '^module Main' "$work/Main.elm" || fail "elm-format did not write a module"
 
-echo "== the lock run reproduces each real-world lockfile"
-for project in rtfeldman/elm-spa-example/cb32acd73c3d346d0064e7923049867d8ce67193 \
-  elm-community/list-extra/46a4817f2df99ce3379390db21348177ac95056d; do
-  name=$(echo "$project" | cut -d/ -f2)
-  source=$(nix flake prefetch --json "github:$project" | nix shell 'nixpkgs#jq' -c jq -r .storePath)
-  cp -r "$source" "$work/$name"
-  chmod -R u+w "$work/$name"
-  (cd "$work/$name" && "$cli" lock)
-  cmp "$work/$name/elm-purifier.lock.json" "tests/real-world/$name/elm-purifier.lock.json" ||
-    fail "the lock of $name differs from the committed one"
-done
-
-echo "== elm and test run on the locked packages"
-(cd "$work/app" && "$cli" elm make src/Main.elm --output="$work/main.js")
-[ "$(installed "$work/app")" = "$(locked "$work/app/elm-purifier.lock.json")" ] ||
-  fail "elm downloaded packages the lock does not record"
-(cd "$work/app" && "$cli" test)
-(cd "$work/package" && "$cli" test)
-[ "$(installed "$work/package")" = "$(locked "$work/package/elm-purifier.lock.json")" ] ||
-  fail "elm-test downloaded packages the lock does not record"
-nix shell 'nixpkgs#nodejs' -c node "$root/tests/run-worker.js" "$work/main.js" Main Nix | grep -qx 'Hello, Nix!' ||
-  fail "the interactively compiled Main printed something else"
+echo "== the editor reports the planted error"
+cp -r tests/fixtures/app "$work/lsp"
+chmod -R u+w "$work/lsp"
+printf '\n\nprobe : Int\nprobe =\n    notDefinedAnywhere\n' >> "$work/lsp/src/Main.elm"
+(cd "$work/lsp" && "$cli" prefetch)
+(cd "$work/lsp" && PATH="$work/lsp/elm-stuff/elm-purifier/bin:$PATH" nix shell 'nixpkgs#python3' -c \
+  python3 -I "$root/tests/lsp-probe.py" src/Main.elm -- elm-language-server --stdio) |
+  grep -q notDefinedAnywhere || fail "elm-language-server reported nothing about the planted error"
 
 echo "== publish checks the documentation against the Nix build"
 (cd "$work/package" && "$cli" publish --check)
 
-echo "== a changed elm.json falls back to the usual ELM_HOME"
+echo "== a changed elm.json is refused with the command to run"
 sed -i 's/"1.0.0"/"1.0.1"/' "$work/package/elm.json"
-(cd "$work/package" && "$cli" elm --version 2>&1) | grep -q 'elm.json changed' ||
-  fail "the CLI did not warn about the stale lockfile"
-
-echo "== the language server works on the locked packages"
-cp -r tests/fixtures/app "$work/lsp"
-chmod -R u+w "$work/lsp"
-printf '\n\nprobe : Int\nprobe =\n    notDefinedAnywhere\n' >> "$work/lsp/src/Main.elm"
-els=$(nix build --no-link --print-out-paths 'nixpkgs#elmPackages.elm-language-server')/bin/elm-language-server
-(cd "$work/lsp" && nix shell 'nixpkgs#python3' -c python3 -I "$root/tests/lsp-probe.py" src/Main.elm -- "$cli" exec "$els" --stdio) |
-  grep -q notDefinedAnywhere || fail "elm-language-server reported nothing about the planted error"
+(cd "$work/package" && PATH="$work/package/elm-stuff/elm-purifier/bin:$PATH" "$cli" prefetch 2>&1 || true) |
+  grep -q 'run `elm-purifier lock`' || fail "prefetch did not name the command that writes the lockfile"
 
 echo "== a tampered hash names the lockfile and the command to run"
 cp -r tests/fixtures/app "$work/tampered"
 chmod -R u+w "$work/tampered"
-sed -i '0,/"hash": "sha256-/s//"hash": "sha256-AAAA/' "$work/tampered/elm-purifier.lock.json"
-(cd "$work/tampered" && "$cli" elm make src/Main.elm --output=/dev/null 2>&1 || true) |
-  grep -q 'run `elm-purifier relock`' || fail "a tampered hash gave no relock hint"
+sed -i '0,/"sha256-/s//"sha256-AAAA/' "$work/tampered/elm-purifier.lock.json"
+(cd "$work/tampered" && "$cli" prefetch 2>&1 || true) |
+  grep -q 'run `elm-purifier lock`' || fail "a tampered hash gave no lock hint"
 
 echo "== a lockfile that does not parse names the command to run"
 cp -r tests/fixtures/app "$work/malformed"
 chmod -R u+w "$work/malformed"
-echo '{ "version": 1,' > "$work/malformed/elm-purifier.lock.json"
-(cd "$work/malformed" && "$cli" elm make src/Main.elm --output=/dev/null 2>&1 || true) |
+echo '{ "version": 3,' > "$work/malformed/elm-purifier.lock.json"
+(cd "$work/malformed" && "$cli" prefetch 2>&1 || true) |
   grep -q 'run `elm-purifier lock`' || fail "a malformed lockfile gave no lock hint"
 
 echo "interactive.sh: all passed"

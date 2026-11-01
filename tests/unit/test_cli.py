@@ -7,8 +7,10 @@ The tests import both scripts from the repository, given as
 ELM_PURIFIER_REPO (the current directory when unset).
 """
 
+import contextlib
 import importlib.machinery
 import importlib.util
+import io
 import json
 import os
 import struct
@@ -16,6 +18,8 @@ import tempfile
 import unittest
 
 REPO = os.environ.get("ELM_PURIFIER_REPO", os.getcwd())
+# The command reads the lock format version from the Nix library.
+os.environ.setdefault("ELM_PURIFIER_LIB", os.path.join(REPO, "nix", "lib"))
 
 
 def load(name, path):
@@ -121,6 +125,100 @@ class ProjectScanning(unittest.TestCase):
     def test_tests_need_an_elm_module(self):
         self.assertFalse(cli.has_tests(self.project({"tests/elm-package.json": "{}"})))
         self.assertTrue(cli.has_tests(self.project({"tests/Suite/A.elm": "module Suite.A exposing (x)"})))
+
+
+class LockFormat(unittest.TestCase):
+    def lockfile(self, data):
+        handle, path = tempfile.mkstemp(suffix=".lock.json")
+        with os.fdopen(handle, "w") as f:
+            json.dump(data, f)
+        return path
+
+    def valid(self):
+        data = {
+            "version": cli.lock_version(),
+            "elmJson": "sha256-x",
+            "tests": False,
+            "hashes": {"elm/core": "sha256-y"},
+            "applications": {"Main": "src/Main.elm"},
+        }
+        data["contentHash"] = cli.content_hash(data)
+        return data
+
+    def message_of(self, data):
+        """The message `read_lock` prints before it exits."""
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), self.assertRaises(SystemExit):
+            cli.read_lock(self.lockfile(data))
+        message = stderr.getvalue()
+        self.assertIn("run `elm-purifier lock`", message)
+        return message
+
+    def test_content_hash_ignores_its_own_field(self):
+        data = self.valid()
+        self.assertEqual(cli.content_hash(data), data["contentHash"])
+        self.assertEqual(cli.content_hash({**data, "contentHash": "other"}), data["contentHash"])
+
+    def test_content_hash_follows_the_content(self):
+        data = self.valid()
+        edited = {**data, "hashes": {"elm/core": "sha256-z"}}
+        self.assertNotEqual(cli.content_hash(edited), data["contentHash"])
+
+    def test_content_hash_is_the_hash_of_sorted_compact_json(self):
+        # builtins.toJSON in nix/lib/lock-hash.nix writes this text.
+        data = {"b": 1, "a": {"y": [True, None], "x": "é"}}
+        text = '{"a":{"x":"é","y":[true,null]},"b":1}'
+        self.assertEqual(cli.content_hash(data), cli.sri_sha256(text.encode()))
+
+    def test_a_valid_lockfile_reads(self):
+        data = self.valid()
+        self.assertEqual(cli.read_lock(self.lockfile(data)), data)
+
+    def test_an_edited_lockfile_fails(self):
+        data = self.valid()
+        data["hashes"]["elm/core"] = "sha256-edited"
+        self.assertIn("edited", self.message_of(data))
+
+    def test_another_version_fails(self):
+        data = self.valid()
+        data["version"] = 99
+        self.assertIn("lock format version 99", self.message_of(data))
+
+    def test_a_missing_field_fails(self):
+        data = self.valid()
+        del data["hashes"]
+        self.assertIn("`hashes`", self.message_of(data))
+
+    def test_archive_url_is_the_tag_zipball(self):
+        self.assertEqual(
+            cli.archive_url("elm/core/1.0.5"), "https://github.com/elm/core/zipball/1.0.5/"
+        )
+
+    def test_named_packages_of_an_application(self):
+        elm_json = {
+            "dependencies": {"direct": {"elm/core": "1.0.5"}, "indirect": {"elm/json": "1.1.4"}},
+            "test-dependencies": {"direct": {"elm-explorations/test": "2.2.1"}, "indirect": {}},
+        }
+        self.assertEqual(cli.named_packages(elm_json, False), ["elm/core/1.0.5", "elm/json/1.1.4"])
+        self.assertEqual(
+            cli.named_packages(elm_json, True),
+            ["elm-explorations/test/2.2.1", "elm/core/1.0.5", "elm/json/1.1.4"],
+        )
+
+    def test_lockfile_precedence(self):
+        os.environ.pop("ELM_PURIFIER_LOCKFILE", None)
+        self.assertEqual(cli.lock_path("/p", None), "/p/elm-purifier.lock.json")
+        os.environ["ELM_PURIFIER_LOCKFILE"] = "/elsewhere/a.json"
+        try:
+            self.assertEqual(cli.lock_path("/p", None), "/elsewhere/a.json")
+            self.assertEqual(cli.lock_path("/p", "/given/b.json"), "/given/b.json")
+        finally:
+            del os.environ["ELM_PURIFIER_LOCKFILE"]
+
+    def test_gc_root_lies_beside_the_lockfile(self):
+        self.assertEqual(
+            cli.gc_root("/p/elm-purifier.lock.json"), "/p/.elm-purifier.lock.json.gcroot"
+        )
 
 
 class PackageCache(unittest.TestCase):

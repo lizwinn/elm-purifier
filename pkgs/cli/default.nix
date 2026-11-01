@@ -52,6 +52,7 @@ stdenvNoCC.mkDerivation {
       --set ELM_PURIFIER_TOOLCHAINS ${lib.escapeShellArg (builtins.toJSON executables)} \
       --set ELM_PURIFIER_ELM_FORMAT ${elmPackages.elm-format}/bin/elm-format \
       --set ELM_PURIFIER_ELM_LANGUAGE_SERVER ${elmPackages.elm-language-server}/bin/elm-language-server \
+      --set ELM_PURIFIER_ELM_JSON ${elmPackages.elm-json}/bin/elm-json \
       --set ELM_PURIFIER_LIB ${../../nix/lib} \
       --set ELM_PURIFIER_NIXPKGS ${path} \
       --set ELM_PURIFIER_PURIFIER ${purifierSrc} \

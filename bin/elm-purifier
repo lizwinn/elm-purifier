@@ -11,6 +11,13 @@ can build the project offline in its sandbox.
         or, without a lockfile, every module that defines `main`. Without
         --tests or --no-tests, the lock keeps its current setting, or
         covers the tests when tests/ holds an Elm module.
+    elm-purifier update [--lockfile PATH] [PACKAGE]...
+        Moves the project to newer package versions, then locks it. For an
+        application, elm-json moves the versions in elm.json: every package
+        within its major version, or the named direct dependencies. For a
+        package, whose elm.json gives ranges, it locks the newest versions
+        the ranges admit, where `lock` keeps the versions its current
+        lockfile records.
     elm-purifier prefetch [--lockfile PATH]
         Builds the locked packages and the tools with Nix, keeps them
         alive with a garbage-collector root beside the lockfile
@@ -36,7 +43,8 @@ The wrapper sets ELM_PURIFIER_TOOLCHAINS (a JSON object from compiler
 version to its `elm`, its `elm-test` executables by the major version of
 elm-explorations/test they run, and the arguments that keep elm-test
 offline; see nix/lib/toolchains.nix), ELM_PURIFIER_ELM_FORMAT and
-ELM_PURIFIER_ELM_LANGUAGE_SERVER (the editor tools), ELM_PURIFIER_LIB
+ELM_PURIFIER_ELM_LANGUAGE_SERVER (the editor tools), ELM_PURIFIER_ELM_JSON
+(the tool that `update` moves versions with), ELM_PURIFIER_LIB
 (the Nix library), ELM_PURIFIER_NIXPKGS (the nixpkgs that library builds
 with), ELM_PURIFIER_PURIFIER (the shared purifier library pinned in the
 flake.lock of elm-purifier) and ELM_PURIFIER_CLI (the store path of this
@@ -433,7 +441,25 @@ def previous_lock(path):
     return data if isinstance(data, dict) else None
 
 
-def lock(path, mains, tests):
+def keeps_resolution(previous, elm_json_path):
+    """Whether a package's current lockfile is valid for its elm.json, so
+    that a new lock keeps the versions it records."""
+    return (
+        previous is not None
+        and previous.get("version") == lock_version()
+        and previous.get("contentHash") == content_hash(previous)
+        and previous.get("elmJson") == file_sri(elm_json_path)
+        and "solved" in previous
+        and "hashes" in previous
+    )
+
+
+def lock(path, mains, tests, resolve=False):
+    """Locks the project. An application's elm.json names every version,
+    so the lock follows it. A package's elm.json gives ranges: when its
+    current lockfile is valid for elm.json, the lock run starts from that
+    lockfile's package cache, where the solver finds the versions it
+    records, unless `resolve` asks for the newest versions in the ranges."""
     project = find_project()
     elm_json_path = os.path.join(project, "elm.json")
     elm_json = read_json(elm_json_path)
@@ -441,6 +467,10 @@ def lock(path, mains, tests):
     toolchain = toolchains()[compiler_version]
     previous = previous_lock(path)
     is_application = elm_json["type"] == "application"
+    seeded = not is_application and not resolve and keeps_resolution(previous, elm_json_path)
+    if seeded:
+        compiler_version = previous["elmVersion"]
+        toolchain = toolchains()[compiler_version]
     if is_application and not mains:
         recorded = (previous or {}).get("applications", {})
         mains = sorted(recorded.values()) or find_mains(project, elm_json)
@@ -454,8 +484,12 @@ def lock(path, mains, tests):
     work = tempfile.mkdtemp(prefix="elm-purifier-lock-")
     try:
         home = os.path.join(work, "home")
-        note(f"running Elm {compiler_version} with an empty ELM_HOME")
-        run_tools(project, elm_json, toolchain, mains, tests, home, offline=False)
+        if seeded:
+            note(f"running Elm {compiler_version} on the packages {path} records, which it keeps")
+            writable_copy(realize(path, project), home)
+        else:
+            note(f"running Elm {compiler_version} with an empty ELM_HOME")
+        run_tools(project, elm_json, toolchain, mains, tests, home, offline=seeded)
         packages = installed_packages(home, compiler_version)
         named = named_packages(elm_json, tests) if is_application else packages
         if set(packages) != set(named):
@@ -503,6 +537,78 @@ def lock(path, mains, tests):
         note(f"wrote {path}; run `elm-purifier prefetch` to work on the locked packages")
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+ELM_VERSION_RE = re.compile(r'("elm-version"\s*:\s*")([^"]+)(")')
+
+
+def update(path, names):
+    """Moves the project to newer package versions, then locks it. An
+    application's elm.json pins every version, and elm-json moves them:
+    `elm-json upgrade` for every package, within its major version, or
+    `elm-json install` for the named ones. elm-json knows Elm 0.19.0 and
+    0.19.1, and the package ranges admit every 0.19 compiler, so for
+    another compiler it solves a copy of elm.json that names 0.19.1. A
+    package's elm.json gives ranges, so the lock run solves them again."""
+    project = find_project()
+    elm_json_path = os.path.join(project, "elm.json")
+    elm_json = read_json(elm_json_path)
+    if elm_json["type"] == "package":
+        if names:
+            fail(
+                "a package's elm.json gives version ranges, and its lock holds the newest "
+                "versions in them; run `elm-purifier update` without package names."
+            )
+        lock(path, [], None, resolve=True)
+        return
+
+    tests = elm_json["test-dependencies"]
+    commands = []
+    if names:
+        direct = [name for name in names if name in elm_json["dependencies"]["direct"]]
+        test = [name for name in names if name in tests["direct"]]
+        other = [name for name in names if name not in direct and name not in test]
+        if other:
+            fail(
+                f"elm.json has no direct dependency {', '.join(other)}; elm-json updates "
+                "the indirect ones with the direct dependencies that need them."
+            )
+        if direct:
+            commands.append(["install", "--yes", *direct])
+        if test:
+            commands.append(["install", "--yes", "--test", *test])
+    else:
+        commands.append(["upgrade", "--yes"])
+
+    with open(elm_json_path) as f:
+        text = f.read()
+    version = ELM_VERSION_RE.search(text).group(2)
+    work = tempfile.mkdtemp(prefix="elm-purifier-update-")
+    try:
+        copy = os.path.join(work, "elm.json")
+        with open(copy, "w") as f:
+            f.write(ELM_VERSION_RE.sub(r"\g<1>0.19.1\g<3>", text, count=1))
+        for command in commands:
+            if command[0] == "install":
+                command += ["--", copy]
+            else:
+                command.append(copy)
+            # elm-json caches the package index in the user's cache
+            # directory; the update uses one of its own, so that it neither
+            # reuses a stale index nor needs a writable home.
+            env = dict(os.environ, HOME=work, XDG_CACHE_HOME=os.path.join(work, "cache"))
+            status = subprocess.run(
+                [os.environ["ELM_PURIFIER_ELM_JSON"], *command], env=env
+            ).returncode
+            if status != 0:
+                fail(f"elm-json {command[0]} failed (its error is above); elm.json is unchanged.")
+        with open(copy) as f:
+            updated = ELM_VERSION_RE.sub(lambda m: m.group(1) + version + m.group(3), f.read(), count=1)
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    with open(elm_json_path, "w") as f:
+        f.write(updated)
+    lock(path, [], None)
 
 
 def checked_lock(project, path):
@@ -719,11 +825,13 @@ def run_tool(name, invoked, args):
 def parse(verb, rest):
     """The options of a command: --lockfile for every command, and the
     options of `lock` and `publish`."""
-    options = {"lockfile": None, "mains": [], "tests": None, "check": False}
+    options = {"lockfile": None, "mains": [], "tests": None, "check": False, "names": []}
     args = iter(rest)
     for arg in args:
         if arg == "--lockfile":
             options["lockfile"] = next(args, None) or fail("--lockfile needs a path")
+        elif verb == "update" and not arg.startswith("-"):
+            options["names"].append(arg)
         elif verb == "lock" and arg == "--main":
             options["mains"].append(next(args, None) or fail("--main needs a file"))
         elif verb == "lock" and arg == "--tests":
@@ -746,11 +854,13 @@ def main(argv):
         print(__doc__)
         return
     verb, rest = argv[0], argv[1:]
-    if verb not in ("lock", "prefetch", "publish"):
+    if verb not in ("lock", "update", "prefetch", "publish"):
         fail(f"unknown command {verb}; see `elm-purifier --help`.")
     options = parse(verb, rest)
     if verb == "lock":
         lock(lock_path(os.getcwd(), options["lockfile"]), options["mains"], options["tests"])
+    elif verb == "update":
+        update(lock_path(os.getcwd(), options["lockfile"]), options["names"])
     elif verb == "prefetch":
         prefetch(lock_path(os.getcwd(), options["lockfile"]))
     else:

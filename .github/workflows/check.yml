@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: MIT
 #
-# Runs on x86_64-linux and aarch64-linux: the flake's checks (the CLI and
-# both Elm toolchains, the sandboxed builds of the fixtures under
-# tests/fixtures with a run of each output and of each test suite, and the
-# formatting), then tests/interactive.sh for what runs outside the sandbox
-# (the lock run, the interactive commands and the publish check).
+# Runs on x86_64-linux and aarch64-linux. The `check` job runs the flake's
+# checks: the CLI and both Elm toolchains, the sandboxed builds of the
+# fixtures with a run of each output and of each test suite, the
+# conformance checks of the purifier contract that run in the sandbox, and
+# the formatting. The checks that need the package server run as jobs of
+# the same name: conformance-relock and conformance-update. The
+# `interactive` job runs the developer's loop on real projects.
 name: check
 
 on:
@@ -27,4 +29,39 @@ jobs:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@v31
       - run: nix flake check -L
+
+  conformance-relock:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: tests/conformance-relock.sh
+
+  conformance-update:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+      - run: tests/conformance-update.sh
+
+  interactive:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
       - run: tests/interactive.sh

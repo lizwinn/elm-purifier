@@ -11,11 +11,19 @@ can build the project offline in its sandbox.
         Locks again, with the entry modules and the test setting that the
         current lockfile records.
     elm-purifier elm ARGS...
-        Runs the Elm compiler on the locked packages, offline.
+        Runs the Elm compiler on the locked packages, offline. `elm init`,
+        `install`, `bump` and `diff` need the package server, so they run
+        with the usual ELM_HOME; relock after `install`.
     elm-purifier test ARGS...
         Runs elm-test on the locked packages, offline.
-    elm-purifier publish
-        Runs `elm publish` on the locked packages.
+    elm-purifier exec COMMAND ARGS...
+        Runs any command, such as an editor or elm-language-server, with
+        ELM_HOME at the locked packages and the lock's elm and elm-test
+        first on PATH.
+    elm-purifier publish [--check]
+        Builds the package with Nix, checks that the documentation the
+        compiler writes is the one Nix built, and runs `elm publish` on the
+        locked packages. --check stops before `elm publish`.
 
 The wrapper sets ELM_PURIFIER_TOOLCHAINS (a JSON object from compiler
 version to the `elm` and `elm-test` executables for it), ELM_PURIFIER_LIB
@@ -243,7 +251,13 @@ def realize(lock_path, out_link=None):
         os.environ["ELM_PURIFIER_NIXPKGS"],
     ]
     command += ["--out-link", out_link] if out_link else ["--no-out-link"]
-    result = subprocess.run(command, check=True, stdout=subprocess.PIPE, text=True)
+    result = subprocess.run(command, stdout=subprocess.PIPE, text=True)
+    if result.returncode != 0:
+        fail(
+            f"Nix could not build the package cache of {lock_path} (its error is above). "
+            "A hash mismatch means the lockfile was edited, or an archive changed on the "
+            "server since the lock was made; run `elm-purifier relock` to write it again."
+        )
     return result.stdout.strip().splitlines()[-1]
 
 
@@ -348,7 +362,11 @@ def locked_home(project):
     return current["elmVersion"], home
 
 
-def run_locked(make_command):
+def run_locked(make_command, path=False):
+    """Runs a command on the locked packages, or with the usual ELM_HOME
+    when the lock is missing or stale. With `path`, the toolchain's `elm`
+    and `elm-test` come first on PATH, for tools such as an editor or
+    elm-language-server that find the compiler there."""
     project = find_project()
     elm_json = read_json(os.path.join(project, "elm.json"))
     located = locked_home(project)
@@ -357,8 +375,94 @@ def run_locked(make_command):
         compiler_version, env["ELM_HOME"] = located
     else:
         compiler_version = select_compiler(elm_json)
-    command = make_command(toolchains()[compiler_version], located is not None)
+    toolchain = toolchains()[compiler_version]
+    if path:
+        bins = [os.path.dirname(toolchain["elm"]), os.path.dirname(toolchain["elm-test"])]
+        env["PATH"] = os.pathsep.join(bins + [env.get("PATH", "")])
+    command = make_command(toolchain, located is not None)
     os.execvpe(command[0], command, env)
+
+
+# The compiler commands that change elm.json or talk to the package server
+# by design. They run with the usual ELM_HOME, where the compiler can
+# download.
+ONLINE_COMMANDS = ("init", "install", "bump", "diff")
+
+
+def run_online_elm(args):
+    project = find_project()
+    toolchain = toolchains()[select_compiler(read_json(os.path.join(project, "elm.json")))]
+    status = subprocess.run([toolchain["elm"], *args]).returncode
+    if status == 0 and args[0] in ("init", "install"):
+        note(f"elm.json may have changed; run `elm-purifier relock` to lock the new packages.")
+    sys.exit(status)
+
+
+def store_root(executable):
+    """The store path of a toolchain executable, /nix/store/…/bin/x."""
+    return os.path.dirname(os.path.dirname(executable))
+
+
+def publish(args):
+    """Publishes a package with `elm publish`, on the locked packages,
+    after checking that the documentation it uploads is the one Nix
+    builds. Elm publishes by registering a pushed git tag with the package
+    server, so the files themselves come from that tag."""
+    check_only = "--check" in args
+    rest = [arg for arg in args if arg != "--check"]
+    project = find_project()
+    if read_json(os.path.join(project, "elm.json"))["type"] != "package":
+        fail("publish applies to packages; an application is not published.")
+    located = locked_home(project)
+    if not located:
+        fail(f"publish needs a {LOCK_NAME} that matches elm.json.")
+    compiler_version, home = located
+    toolchain = toolchains()[compiler_version]
+
+    built = subprocess.run(
+        [
+            "nix-build",
+            os.path.join(os.environ["ELM_PURIFIER_LIB"], "project.nix"),
+            "--no-out-link",
+            "-A",
+            "package",
+            "--argstr",
+            "projectDir",
+            project,
+            "--arg",
+            "nixpkgs",
+            os.environ["ELM_PURIFIER_NIXPKGS"],
+            "--argstr",
+            "elm",
+            store_root(toolchain["elm"]),
+            "--argstr",
+            "elm-test",
+            store_root(toolchain["elm-test"]),
+        ],
+        check=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    ).stdout.strip().splitlines()[-1]
+
+    work = tempfile.mkdtemp(prefix="elm-purifier-publish-")
+    try:
+        docs = os.path.join(work, "docs.json")
+        subprocess.run(
+            [toolchain["elm"], "make", f"--docs={docs}"],
+            cwd=project,
+            env=dict(os.environ, ELM_HOME=home),
+            check=True,
+        )
+        with open(docs, "rb") as f, open(os.path.join(built, "docs.json"), "rb") as g:
+            if f.read() != g.read():
+                fail(f"the documentation `elm make --docs` writes differs from {built}/docs.json.")
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    note(f"the documentation matches the package Nix built at {built}")
+    if check_only:
+        return
+    command = [toolchain["elm"], "publish", *rest]
+    os.execvpe(command[0], command, dict(os.environ, ELM_HOME=home))
 
 
 def main(argv):
@@ -381,12 +485,18 @@ def main(argv):
         lock(mains, tests)
     elif verb == "relock":
         relock()
+    elif verb == "elm" and rest and rest[0] in ONLINE_COMMANDS:
+        run_online_elm(rest)
     elif verb == "elm":
         run_locked(lambda toolchain, locked: [toolchain["elm"], *rest])
+    elif verb == "exec":
+        if not rest:
+            fail("exec needs a command, such as `elm-purifier exec code .`.")
+        run_locked(lambda toolchain, locked: rest, path=True)
     elif verb == "test":
         run_locked(lambda toolchain, locked: [*elm_test_command(toolchain, offline=locked), *rest])
     elif verb == "publish":
-        run_locked(lambda toolchain, locked: [toolchain["elm"], "publish", *rest])
+        publish(rest)
     else:
         fail(f"unknown command {verb}; see `elm-purifier --help`.")
 

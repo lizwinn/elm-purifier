@@ -103,11 +103,25 @@ let
     cd ${lib.escapeShellArg subdirectory}
   '';
 
+  isApplication = elmJson.type == "application";
+
+  # An application's elm.json names the exact version of every package it
+  # builds with (and tests with), so a lockfile without one of them was
+  # edited after `elm-purifier lock` wrote it.
+  exact = deps: lib.mapAttrsToList (name: version: "${name}/${version}") (deps.direct // deps.indirect);
+  requiredPackages = lib.optionals isApplication (
+    exact elmJson.dependencies ++ lib.optionals lock.tests (exact elmJson."test-dependencies")
+  );
+  missingPackages = lib.filter (package: !(lib.elem package lock.packages)) requiredPackages;
+
   mkBuild =
     name: attrs:
     assert
       lock.elmJson == elmJsonHash
-      || throw "elm-purifier: elm.json changed since ${toString lockFile} was made; run `elm-purifier relock`.";
+      || throw "elm-purifier: elm.json changed since ${toString lockFile} was made; run `elm-purifier relock` in ${subdirectory} of the source.";
+    assert
+      missingPackages == [ ]
+      || throw "elm-purifier: ${toString lockFile} does not lock ${lib.concatStringsSep ", " missingPackages}, which elm.json needs; run `elm-purifier relock` to write it again.";
     stdenvNoCC.mkDerivation (
       {
         inherit name;
@@ -178,7 +192,6 @@ let
     '';
   };
 
-  isApplication = elmJson.type == "application";
 in
 {
   inherit elmHome lock;

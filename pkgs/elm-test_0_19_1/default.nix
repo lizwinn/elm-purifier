@@ -22,8 +22,11 @@ buildNpmPackage rec {
 
   npmDepsHash = "sha256-hoInSQ+fKVmfCUoxYTqqb4+Nx/ER7EWWeN8FtmhOTpA=";
 
+  # elm-test puts its socket at /tmp/elm_test-<pid>.sock. The patch puts it
+  # in the directory TMPDIR names, which is where a sandbox lets it write.
   postPatch = ''
     sed -i '/elm-tooling install/d' package.json
+    ${import ../elm-test/socket-patch.nix}
   '';
 
   dontNpmBuild = true;

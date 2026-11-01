@@ -8,18 +8,17 @@
 # the package server, so it is a job of the CI workflow instead
 # (tests/conformance-relock.sh).
 {
+  # A package set with the default overlay of this flake applied, which has
+  # `buildElmProject`.
   pkgs,
-  # lib.elm-purifier.buildElmProject of this flake.
-  buildElmProject,
   cli,
   # The source of the shared purifier library, as pinned in flake.lock.
   purifierSrc,
 }:
 let
   inherit (pkgs) lib runCommand nodejs;
-  inherit (pkgs.stdenv.hostPlatform) system;
   purifier = import purifierSrc { inherit lib; };
-  build = args: buildElmProject ({ inherit pkgs; } // args);
+  build = pkgs.buildElmProject;
 
   app = build { src = ./fixtures/app; };
   package = build { src = ./fixtures/package; };
@@ -86,14 +85,11 @@ let
     let
       expression = args: ''
         let
-          pkgs = import ${pkgs.path} {
-            system = "${system}";
-            config = { };
-            overlays = [ ];
+          standalone = import ${../.}/nix/lib/standalone.nix {
+            nixpkgs = ${pkgs.path};
+            purifierSrc = ${purifierSrc};
           };
-          purifier = import ${purifierSrc} { inherit (pkgs) lib; };
-          build = import ${../.}/nix/lib/build-elm-project.nix { inherit purifier; };
-          project = build ({ inherit pkgs; src = ${./fixtures/app}; } // ${args});
+          project = standalone.buildElmProject ({ src = ${./fixtures/app}; } // ${args});
         in
         builtins.seq project.packages.Main "evaluated"
       '';

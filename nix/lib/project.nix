@@ -16,13 +16,10 @@
   elm,
 }:
 let
-  pkgs = import nixpkgs { };
-  buildElmProject = import ./build-elm-project.nix {
-    purifier = import purifierSrc { inherit (pkgs) lib; };
-  };
+  standalone = import ./standalone.nix { inherit nixpkgs purifierSrc; };
 in
-buildElmProject {
-  inherit pkgs lockFile;
+standalone.buildElmProject {
+  inherit lockFile;
   src = /. + projectDir;
   elm = builtins.storePath elm;
 }

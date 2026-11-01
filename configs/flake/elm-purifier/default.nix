@@ -57,7 +57,6 @@
           {
             checks = import ../../../tests {
               pkgs = pkgs.extend self.overlays.default;
-              inherit (self.lib.elm-purifier) buildElmProject;
               inherit (self.packages.${system}) cli;
               purifierSrc = self.inputs.purifier;
             };

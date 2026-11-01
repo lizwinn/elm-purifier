@@ -1,12 +1,16 @@
 # SPDX-License-Identifier: MIT
 #
 # buildElmProject: the sandboxed builds of an Elm project, from elm.json
-# and the lockfile `elm-purifier lock` writes. The flake publishes it as
-# `lib.elm-purifier.buildElmProject`, with the shared purifier library
-# given:
+# and the lockfile `elm-purifier lock` writes.
 #
-#   (elm-purifier.lib.elm-purifier.buildElmProject { inherit pkgs; src = ./.; })
-#     .packages.Main
+# This file is a package for callPackage. It takes the packages it needs by
+# name: `stdenvNoCC`, `callPackage`, `elmPackages`, the scope `elm-purifier`
+# (the packages of pkgs/) and the shared library `purifier`. The default
+# overlay of the flake adds the builder it returns to the package set as
+# `buildElmProject`, so `buildElmProject.override` replaces any of them, and
+# a package written for callPackage takes the builder by name:
+#
+#   { buildElmProject }: (buildElmProject { src = ./.; }).packages.Main
 #
 # Every attribute name of the result is known at evaluation time, from the
 # lockfile and elm.json. The result has
@@ -25,9 +29,15 @@
 #
 # `release` of an application and `tests` of a lock without tests stop
 # evaluation with a message that says why.
-{ purifier }:
 {
-  pkgs,
+  lib,
+  stdenvNoCC,
+  callPackage,
+  elmPackages,
+  elm-purifier,
+  purifier,
+}:
+{
   # The tree the project is in, as a path: the flake's own source, or a
   # source fetched while Nix evaluates (a flake input, builtins.fetchTarball).
   # The builder reads elm.json and the lockfile during evaluation, so a
@@ -62,7 +72,6 @@
   srcFilter ? null,
 }:
 let
-  inherit (pkgs) lib stdenvNoCC;
   projectDir = src + "/${subdirectory}";
   elmJsonFile = projectDir + "/elm.json";
   elmJson = builtins.fromJSON (builtins.readFile elmJsonFile);
@@ -77,18 +86,8 @@ let
   # The rest of what lock.nix read, once the lock passed the check.
   checked = builtins.seq lock read;
 
-  # The packages of this flake (pkgs/), on the given package set.
-  elm-purifier = import ../../pkgs {
-    inherit (pkgs) callPackage;
-    lib = lib // {
-      inherit purifier;
-    };
-  };
   toolchain =
-    (import ./toolchains.nix {
-      inherit elm-purifier;
-      inherit (pkgs) elmPackages;
-    }).${checked.elmVersion} or {
+    (import ./toolchains.nix { inherit elm-purifier elmPackages; }).${checked.elmVersion} or {
       elm = throw "elm-purifier: there is no Elm ${checked.elmVersion} compiler for the lock; pass `elm`.";
       elm-test = { };
       elmTestOfflineArgs = [ ];
@@ -104,7 +103,7 @@ let
       toolchain.elm-test.${testMajor}
         or (throw "elm-purifier: there is no elm-test for Elm ${checked.elmVersion} with elm-explorations/test ${testMajor}.x; pass `elm-test`.");
 
-  elmHome = pkgs.callPackage ./elm-home.nix {
+  elmHome = callPackage ./elm-home.nix {
     inherit
       lockFile
       elmJsonFile

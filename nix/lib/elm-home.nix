@@ -3,32 +3,47 @@
 # The package cache of a lockfile, laid out as an ELM_HOME:
 # <elmVersion>/packages/<author>/<project>/<version> for each locked
 # package, with a registry.dat that lists them (see elm-home.py). It is a
-# package for callPackage, with the lockfile among its arguments.
+# package for callPackage, with the lockfile and the shared purifier
+# library among its arguments.
 #
-# The compiler writes its build artifacts into each package directory, so
-# a build uses a writable copy of this tree.
+# The shared library's `tree` fetches and unpacks each archive entry. The
+# packages are copies rather than links into the store, because the
+# compiler writes its build artifacts into each package directory; a build
+# uses a writable copy of this tree.
 {
   lib,
+  pkgs,
   runCommand,
   python3,
+  purifier,
   lockFile,
-  # Replaces the built-in fetcher for package archives; see fetch.nix.
+  # Replaces nixpkgs' fetchurl for package archives, as for a proxy or
+  # credentials. It takes the arguments of nixpkgs' fetchurl.
   fetchurl ? null,
 }:
 let
   lock = import ./lock.nix { inherit lockFile; };
-  fetch = import ./fetch.nix { inherit lock fetchurl; };
+  packages = purifier.tree (
+    {
+      inherit pkgs;
+      name = "elm-packages-${lock.elmVersion}";
+      link = false;
+      entries = map (
+        download: download // { path = "${lock.elmVersion}/packages/${download.path}"; }
+      ) lock.downloads;
+    }
+    // lib.optionalAttrs (fetchurl != null) { inherit fetchurl; }
+  );
 in
-# The manifest goes to the builder as a file, since a large application
-# locks many packages.
 runCommand "elm-home-${lock.elmVersion}"
   {
     nativeBuildInputs = [ python3 ];
-    manifest = lib.concatMapStrings (d: "${d.path}\t${fetch d}\n") lock.downloads;
-    passAsFile = [ "manifest" ];
+    packageList = lib.concatMapStrings (package: "${package}\n") lock.packages;
+    passAsFile = [ "packageList" ];
     preferLocalBuild = true;
     passthru = { inherit lock; };
   }
   ''
-    python3 -I ${./elm-home.py} "$out" ${lock.elmVersion} "$manifestPath"
+    cp -r --no-preserve=mode ${packages} "$out"
+    python3 -I ${./elm-home.py} "$out" ${lock.elmVersion} "$packageListPath"
   ''

@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: MIT
-"""Writes the package cache of an ELM_HOME from locked package archives.
+"""Finishes the package cache of an ELM_HOME from unpacked packages.
 
-    python3 elm-home.py OUT COMPILER_VERSION MANIFEST
+    python3 elm-home.py HOME COMPILER_VERSION PACKAGES
 
-MANIFEST has one line per package, `author/project/version<TAB>zip`. Each
-zip is unpacked to OUT/COMPILER_VERSION/packages/author/project/version
-the way the Elm compiler unpacks a download: the archive's top directory
-is stripped, and only elm.json, LICENSE, README.md and src/ are kept.
+PACKAGES has one line per package, `author/project/version`, and each one
+is unpacked at HOME/COMPILER_VERSION/packages/author/project/version. The
+Elm compiler keeps only elm.json, LICENSE, README.md and src/ of a
+downloaded package, so this removes everything else.
 
 The compiler also reads packages/registry.dat, its copy of the package
 server's list of every published version. That list changes with every
@@ -15,25 +15,22 @@ the locked versions, which is all an offline build resolves against.
 """
 
 import os
+import shutil
 import struct
 import sys
-import zipfile
 
-KEPT_FILES = ("elm.json", "LICENSE", "README.md")
+KEPT = ("elm.json", "LICENSE", "README.md", "src")
 
 
-def unpack(archive, destination):
-    with zipfile.ZipFile(archive) as z:
-        for info in z.infolist():
-            if info.is_dir() or "/" not in info.filename:
-                continue
-            relative = info.filename.split("/", 1)[1]
-            if relative not in KEPT_FILES and not relative.startswith("src/"):
-                continue
-            target = os.path.join(destination, relative)
-            os.makedirs(os.path.dirname(target), exist_ok=True)
-            with open(target, "wb") as out:
-                out.write(z.read(info))
+def trim(directory):
+    """Removes what the compiler leaves out of a downloaded package."""
+    for name in os.listdir(directory):
+        if name not in KEPT:
+            path = os.path.join(directory, name)
+            if os.path.isdir(path) and not os.path.islink(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
 
 
 # The registry is the compiler's Data.Binary encoding of
@@ -71,7 +68,7 @@ def registry(packages):
         author, project, version = package.split("/")
         by_name.setdefault((author, project), []).append(version)
     data = encode_int(len(packages)) + encode_int(len(by_name))
-    for (author, project) in sorted(by_name):
+    for author, project in sorted(by_name):
         versions = sorted(by_name[(author, project)], key=version_key, reverse=True)
         data += encode_text(author) + encode_text(project)
         data += encode_version(versions[0])
@@ -80,17 +77,12 @@ def registry(packages):
     return data
 
 
-def main(out, compiler_version, manifest):
-    root = os.path.join(out, compiler_version, "packages")
-    os.makedirs(root, exist_ok=True)
-    packages = []
-    with open(manifest) as f:
-        for line in f:
-            if not line.strip():
-                continue
-            package, archive = line.rstrip("\n").split("\t")
-            unpack(archive, os.path.join(root, package))
-            packages.append(package)
+def main(home, compiler_version, package_list):
+    root = os.path.join(home, compiler_version, "packages")
+    with open(package_list) as f:
+        packages = [line.strip() for line in f if line.strip()]
+    for package in packages:
+        trim(os.path.join(root, package))
     with open(os.path.join(root, "registry.dat"), "wb") as f:
         f.write(registry(packages))
 

@@ -2,8 +2,8 @@
 #
 # The elm-purifier command: bin/elm-purifier on nixpkgs' Python, with the
 # Elm toolchains it locks and runs with (nix/lib/toolchains.nix), the Nix
-# library it realizes lockfiles with, and the nixpkgs that library builds
-# with.
+# library it realizes lockfiles with, the nixpkgs that library builds
+# with, and the shared purifier library pinned in this flake's flake.lock.
 {
   lib,
   stdenvNoCC,
@@ -13,6 +13,8 @@
   elmPackages,
   path,
   version,
+  # The shared purifier library, as pinned in this flake's flake.lock.
+  purifierSrc,
 }:
 let
   toolchains = import ../../nix/lib/toolchains.nix { inherit elm-purifier elmPackages; };
@@ -36,7 +38,8 @@ stdenvNoCC.mkDerivation {
       --add-flags "-I $out/libexec/elm-purifier.py" \
       --set ELM_PURIFIER_TOOLCHAINS ${lib.escapeShellArg (builtins.toJSON executables)} \
       --set ELM_PURIFIER_LIB ${../../nix/lib} \
-      --set ELM_PURIFIER_NIXPKGS ${path}
+      --set ELM_PURIFIER_NIXPKGS ${path} \
+      --set ELM_PURIFIER_PURIFIER ${purifierSrc}
     runHook postInstall
   '';
   meta = {

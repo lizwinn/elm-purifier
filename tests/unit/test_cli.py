@@ -9,13 +9,11 @@ ELM_PURIFIER_REPO (the current directory when unset).
 
 import importlib.machinery
 import importlib.util
-import io
 import json
 import os
 import struct
 import tempfile
 import unittest
-import zipfile
 
 REPO = os.environ.get("ELM_PURIFIER_REPO", os.getcwd())
 
@@ -126,30 +124,16 @@ class ProjectScanning(unittest.TestCase):
 
 
 class PackageCache(unittest.TestCase):
-    def zip_of(self, entries):
-        buffer = io.BytesIO()
-        with zipfile.ZipFile(buffer, "w") as z:
-            for name, data in entries.items():
-                z.writestr(name, data)
-        handle, path = tempfile.mkstemp(suffix=".zip")
-        with os.fdopen(handle, "wb") as f:
-            f.write(buffer.getvalue())
-        return path
-
-    def test_unpack_keeps_what_the_compiler_keeps(self):
-        archive = self.zip_of({
-            "elm-core-1234567/elm.json": "{}",
-            "elm-core-1234567/README.md": "r",
-            "elm-core-1234567/LICENSE": "l",
-            "elm-core-1234567/src/Basics.elm": "b",
-            "elm-core-1234567/tests/Test.elm": "t",
-            "elm-core-1234567/.travis.yml": "x",
-        })
-        destination = tempfile.mkdtemp()
-        elm_home.unpack(archive, destination)
+    def test_trim_keeps_what_the_compiler_keeps(self):
+        package = tempfile.mkdtemp()
+        for path in ["elm.json", "README.md", "LICENSE", "src/Basics.elm", "tests/Test.elm", ".travis.yml"]:
+            os.makedirs(os.path.dirname(os.path.join(package, path)), exist_ok=True)
+            with open(os.path.join(package, path), "w") as f:
+                f.write(path)
+        elm_home.trim(package)
         found = sorted(
-            os.path.relpath(os.path.join(d, f), destination)
-            for d, _, fs in os.walk(destination) for f in fs
+            os.path.relpath(os.path.join(d, f), package)
+            for d, _, fs in os.walk(package) for f in fs
         )
         self.assertEqual(found, ["LICENSE", "README.md", "elm.json", "src/Basics.elm"])
 

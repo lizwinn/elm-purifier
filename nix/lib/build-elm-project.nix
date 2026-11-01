@@ -31,6 +31,8 @@
   symlinkJoin,
   elm-purifier,
   elmPackages,
+  # The shared nix-purifiers library, which fetches the package archives.
+  purifier,
 }:
 {
   # The tree the project is in, as a path: the flake's own source, or a
@@ -56,7 +58,8 @@
   # compiler version the lock was made with and the major version of
   # elm-explorations/test in elm.json (see toolchains.nix).
   elm-test ? null,
-  # Replaces the built-in fetcher for package archives; see fetch.nix.
+  # Replaces nixpkgs' fetchurl for package archives, as for a proxy or
+  # credentials. It takes the arguments of nixpkgs' fetchurl.
   fetchurl ? null,
   # Filters `src` before it is copied into the store, as the `filter` of
   # builtins.path. The default leaves out version control, elm-stuff,
@@ -92,7 +95,7 @@ let
       toolchain.elm-test.${testMajor}
         or (throw "elm-purifier: there is no elm-test for Elm ${lock.elmVersion} with elm-explorations/test ${testMajor}.x; pass `elm-test`.");
 
-  elmHome = callPackage ./elm-home.nix { inherit lockFile fetchurl; };
+  elmHome = callPackage ./elm-home.nix { inherit lockFile fetchurl purifier; };
 
   defaultSrcFilter =
     path: type:

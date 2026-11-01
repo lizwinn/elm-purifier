@@ -9,5 +9,12 @@
   lockFile,
   # The nixpkgs the CLI was built with.
   nixpkgs,
+  # The shared purifier library, as pinned in this flake's flake.lock.
+  # Its root default.nix is its entry point for code outside a flake.
+  purifierSrc,
 }:
-(import nixpkgs { }).callPackage ./elm-home.nix { inherit lockFile; }
+let
+  pkgs = import nixpkgs { };
+  purifier = import purifierSrc { inherit (pkgs) lib; };
+in
+pkgs.callPackage ./elm-home.nix { inherit lockFile purifier; }

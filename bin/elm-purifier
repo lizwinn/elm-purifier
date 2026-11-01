@@ -28,9 +28,10 @@ can build the project offline in its sandbox.
 The wrapper sets ELM_PURIFIER_TOOLCHAINS (a JSON object from compiler
 version to its `elm`, its `elm-test` executables by the major version of
 elm-explorations/test they run, and the arguments that keep elm-test
-offline; see nix/lib/toolchains.nix), ELM_PURIFIER_LIB
-(the Nix library) and ELM_PURIFIER_NIXPKGS (the nixpkgs that the locked
-packages are realized with).
+offline; see nix/lib/toolchains.nix), ELM_PURIFIER_LIB (the Nix library),
+ELM_PURIFIER_NIXPKGS (the nixpkgs that library builds with) and
+ELM_PURIFIER_PURIFIER (the shared purifier library pinned in the flake's
+flake.lock, whose root default.nix is its entry point outside a flake).
 """
 
 import base64
@@ -285,21 +286,29 @@ def record(package):
     }
 
 
-def realize(lock_path, out_link=None):
-    """Builds the package cache of a lockfile with Nix and returns its
-    store path."""
+def nix_build(file, args, out_link=None):
+    """Builds one of the Nix library's entry files outside a flake, with
+    the nixpkgs and the shared purifier library the command was built
+    with, and returns the result of nix-build."""
     command = [
         "nix-build",
-        os.path.join(os.environ["ELM_PURIFIER_LIB"], "realize.nix"),
-        "--arg",
-        "lockFile",
-        os.path.abspath(lock_path),
+        os.path.join(os.environ["ELM_PURIFIER_LIB"], file),
         "--arg",
         "nixpkgs",
         os.environ["ELM_PURIFIER_NIXPKGS"],
+        "--arg",
+        "purifierSrc",
+        os.environ["ELM_PURIFIER_PURIFIER"],
+        *args,
     ]
     command += ["--out-link", out_link] if out_link else ["--no-out-link"]
-    result = subprocess.run(command, stdout=subprocess.PIPE, text=True)
+    return subprocess.run(command, stdout=subprocess.PIPE, text=True)
+
+
+def realize(lock_path, out_link=None):
+    """Builds the package cache of a lockfile with Nix and returns its
+    store path."""
+    result = nix_build("realize.nix", ["--arg", "lockFile", os.path.abspath(lock_path)], out_link)
     if result.returncode != 0:
         fail(
             f"Nix could not build the package cache of {lock_path} (its error is above). "
@@ -469,27 +478,22 @@ def publish(args):
     compiler_version, home = located
     toolchain = toolchains()[compiler_version]
 
-    built = subprocess.run(
+    result = nix_build(
+        "project.nix",
         [
-            "nix-build",
-            os.path.join(os.environ["ELM_PURIFIER_LIB"], "project.nix"),
-            "--no-out-link",
             "-A",
             "package",
             "--argstr",
             "projectDir",
             project,
-            "--arg",
-            "nixpkgs",
-            os.environ["ELM_PURIFIER_NIXPKGS"],
             "--argstr",
             "elm",
             store_root(toolchain["elm"]),
         ],
-        check=True,
-        stdout=subprocess.PIPE,
-        text=True,
-    ).stdout.strip().splitlines()[-1]
+    )
+    if result.returncode != 0:
+        fail("Nix could not build the package (its error is above).")
+    built = result.stdout.strip().splitlines()[-1]
 
     work = tempfile.mkdtemp(prefix="elm-purifier-publish-")
     try:

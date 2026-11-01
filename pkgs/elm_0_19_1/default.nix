@@ -14,11 +14,16 @@
   elmPackages,
   fetchgit,
   callPackage,
+  # The shared nix-purifiers library.
+  purifier,
 }:
 let
   inherit (haskell.lib.compose) overrideCabal addBuildDepends;
   haskellPackages = haskell.packages.ghc98;
-  reactorHome = callPackage ../../nix/lib/elm-home.nix { lockFile = ./reactor.lock.json; };
+  reactorHome = callPackage ../../nix/lib/elm-home.nix {
+    lockFile = ./reactor.lock.json;
+    inherit purifier;
+  };
 in
 addBuildDepends
   [

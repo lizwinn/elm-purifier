@@ -19,13 +19,14 @@ nix run github:nix-purifiers/elm-purifier -- lock
 ```
 
 The command writes `elm-purifier.lock.json` beside `elm.json`. Commit it.
-The lockfile holds only what `elm.json` cannot give: the SHA-256 of each
-package zip, the entry modules of an application, whether the lock covers
-the tests, a hash of `elm.json`, and a hash of the lockfile itself. For a
-package project, whose `elm.json` gives version ranges, it also holds the
-versions the solver chose and the compiler version. For an application,
-`elm.json` names every version and the compiler, and the builder reads
-them from there.
+Elm has no lockfile of its own, so `elm.json` is the resolution that the
+lock keeps. For an application, `elm.json` names every version and the
+compiler, and the builder reads them from there. For a package, `elm.json`
+gives version ranges, and the lockfile records the versions the solver
+chose and the compiler version. The lockfile also holds what `elm.json`
+cannot give: the SHA-256 of each package zip, the entry modules of an
+application, whether the lock covers the tests, a hash of `elm.json`, and a
+hash of the lockfile itself.
 
 The default overlay of the flake adds `buildElmProject` to the package set,
 where nixpkgs keeps its own builders. A package written for `callPackage`
@@ -108,8 +109,10 @@ elm make src/Main.elm
 elm-test
 ```
 
-`prefetch` builds the locked packages and the tools with Nix, and links the
-tools into `elm-stuff/elm-purifier/bin`. The linked `elm` and `elm-test` are
+Elm has no plugin mechanism, so `elm-purifier` is a command of its own that
+runs the Elm compiler and elm-test. `prefetch` builds the locked packages
+and the tools with Nix, and links the tools into
+`elm-stuff/elm-purifier/bin`. The linked `elm` and `elm-test` are
 the real compiler and test runner, running on the locked packages. Elm
 commands that talk to the package server run with the usual `ELM_HOME`:
 `elm init`, `install`, `bump` and `diff`, and `elm-test init` and
@@ -124,8 +127,8 @@ elm-purifier lock
 elm-purifier prefetch
 ```
 
-`elm-purifier update` moves the project to newer versions and locks it. For
-an application it runs `elm-json upgrade`, which moves every package within
+`elm-purifier update` moves the project to newer versions and locks it. Elm
+has no update command, so for an application it runs `elm-json upgrade`, which moves every package within
 its major version, or `elm-json install` for the packages you name
 (`elm-purifier update elm/json`). For a package project it locks the newest
 versions that the ranges in `elm.json` admit, where `lock` keeps the
@@ -139,11 +142,13 @@ Publishing a package takes one command:
 nix run github:nix-purifiers/elm-purifier -- publish
 ```
 
-Elm publishes by registering a pushed git tag with the package server, so
-`elm publish` takes no prebuilt files. The command builds the `release` with
-Nix, compiles the documentation on the locked packages, and stops unless the
-two are identical. It then runs `elm publish`, which uploads that same
-documentation. `publish --check` stops before `elm publish`.
+Elm publishes by registering a pushed git tag with the package server, which
+fetches the release from GitHub. So `publish` cannot upload the `release`
+that Nix built, because `elm publish` takes no prebuilt files. The command
+builds the `release` with Nix, compiles the documentation on the locked
+packages, and stops unless the two are identical. It then runs `elm
+publish`, which registers the tag. `publish --check` stops before `elm
+publish`.
 
 ## Working offline
 

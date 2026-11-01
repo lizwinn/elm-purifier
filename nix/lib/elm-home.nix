@@ -7,14 +7,17 @@
 # purifier library among its arguments.
 #
 # The lock is read by lock.nix and checked by the shared library's
-# `checkLock`, and `tree` fetches and unpacks the entries of the system.
-# The packages are copies rather than links into the store, because the
-# compiler writes its build artifacts into each package directory; a build
-# uses a writable copy of this tree.
+# `checkLock`. `tree` of the shared library fetches and unpacks the entries
+# of the system, and lays them out at their paths. The packages are copies
+# rather than links into the store, because the compiler writes its build
+# artifacts into each package directory; a build uses a writable copy of
+# this tree.
 {
   lib,
-  pkgs,
+  stdenvNoCC,
   runCommand,
+  unzip,
+  zstd,
   python3,
   purifier,
   lockFile,
@@ -23,18 +26,23 @@
   elmJsonFile,
   # Where the project is, for messages.
   location ? "the project directory",
-  # The fetchers that `tree` passes to `fetchEntry` of the shared library,
-  # such as a `fetchurl` that sends credentials or asks a company mirror.
+  # The fetchers that `tree` of the shared library takes, such as a
+  # `fetchurl` that sends credentials or asks a company mirror.
   fetchers ? { },
 }:
 let
   read = import ./lock.nix { inherit lockFile elmJsonFile location; };
   lock = purifier.checkLock read.lock;
-  entries = purifier.entriesFor pkgs.stdenv.hostPlatform.system lock;
+  entries = purifier.entriesFor stdenvNoCC.hostPlatform.system lock;
   packages = map (entry: lib.removePrefix "${read.elmVersion}/packages/" entry.path) entries;
   tree = purifier.tree (
     {
-      inherit pkgs entries;
+      inherit
+        runCommand
+        unzip
+        zstd
+        entries
+        ;
       name = "elm-packages-${read.elmVersion}";
       link = false;
     }

@@ -83,10 +83,13 @@ The builder takes these arguments:
   whose source directories reach outside its own directory, such as
   `"../shared/src"`.
 - `lockFile`, which defaults to `elm-purifier.lock.json` beside `elm.json`.
-  A lockfile kept outside `src`, as in a packaging flake for a project that
-  its author does not change, replaces any copy inside `src`. The command
-  takes the same path as `--lockfile`, or from the environment variable
-  `ELM_PURIFIER_LOCKFILE`, which a dev shell can set.
+  We recommend committing that lockfile to the repository, which is the
+  default. A flake can instead keep the lockfile outside `src`, as in a
+  packaging flake for a project that its author does not change, and the
+  build then uses it in place of any copy inside `src`. The command takes
+  the same path as `--lockfile`, or from the environment variable
+  `ELM_PURIFIER_LOCKFILE`, which a dev shell can set. Elm has no lockfile of
+  its own, so the builder has no argument for one.
 - `fetchers`, passed to the shared library for a company mirror or
   credentials. `fetchers.fetchurl` replaces the `fetchurl` of nixpkgs.
 - `optimize`, on by default. An application that uses `Debug` needs it
@@ -253,9 +256,10 @@ its tests.
 
 ### A package: list-extra
 
-[list-extra](https://github.com/elm-community/list-extra) is a package that
-you may want to build without changing it. Keep the lockfile in a flake of
-your own, next to the source it describes:
+[list-extra](https://github.com/elm-community/list-extra) is a package. In
+your own project you commit the lockfile, as in the first example. To build
+a package whose repository you do not change, a flake can keep the lockfile
+instead, beside a flake input for the source:
 
 ```zsh
 mkdir packaging && cd packaging

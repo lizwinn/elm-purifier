@@ -18,7 +18,7 @@ let
   toolchains = import ../../nix/lib/toolchains.nix { inherit elm-purifier elmPackages; };
   executables = lib.mapAttrs (_: toolchain: {
     elm = "${toolchain.elm}/bin/elm";
-    elm-test = "${toolchain.elm-test}/bin/elm-test";
+    elm-test = lib.mapAttrs (_: elm-test: "${elm-test}/bin/elm-test") toolchain.elm-test;
     elm-test-offline-args = toolchain.elmTestOfflineArgs;
   }) toolchains;
 in

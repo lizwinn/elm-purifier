@@ -23,16 +23,14 @@ let
   relock = "run `elm-purifier relock` in the directory of elm.json to write it again";
   invalid = reason: throw "elm-purifier: ${toString lockFile} ${reason}; ${relock}.";
 
-  lock = builtins.addErrorContext "while reading the elm-purifier lockfile ${toString lockFile} (if it does not parse, ${relock})" (
+  lock = builtins.addErrorContext "while reading the elm-purifier lockfile ${toString lockFile} (if it does not parse, run `elm-purifier lock` in the directory of elm.json, with --main for each entry module of an application, to write it again)" (
     builtins.fromJSON (builtins.readFile lockFile)
   );
   supportedVersion = import ./lock-version.nix;
 
   require =
     fields: what: value:
-    builtins.all (
-      field: value ? ${field} || invalid "has ${what} without the field `${field}`"
-    ) fields;
+    builtins.all (field: value ? ${field} || invalid "has ${what} without the field `${field}`") fields;
 
   valid =
     builtins.isAttrs lock

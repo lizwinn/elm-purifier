@@ -26,7 +26,9 @@ can build the project offline in its sandbox.
         locked packages. --check stops before `elm publish`.
 
 The wrapper sets ELM_PURIFIER_TOOLCHAINS (a JSON object from compiler
-version to the `elm` and `elm-test` executables for it), ELM_PURIFIER_LIB
+version to its `elm`, its `elm-test` executables by the major version of
+elm-explorations/test they run, and the arguments that keep elm-test
+offline; see nix/lib/toolchains.nix), ELM_PURIFIER_LIB
 (the Nix library) and ELM_PURIFIER_NIXPKGS (the nixpkgs that the locked
 packages are realized with).
 """
@@ -113,6 +115,18 @@ def read_json(path):
         return json.load(f)
 
 
+def read_lock(path):
+    """The lockfile at `path`, or a message that says how to write it
+    again when it does not parse."""
+    try:
+        return read_json(path)
+    except json.JSONDecodeError as error:
+        fail(
+            f"{path} is not valid JSON ({error}); run `elm-purifier lock` "
+            "(with --main for each entry module of an application) to write it again."
+        )
+
+
 def find_project():
     project = os.getcwd()
     if not os.path.exists(os.path.join(project, "elm.json")):
@@ -147,6 +161,14 @@ def find_mains(project, elm_json):
                     if MAIN_RE.search(f.read()):
                         mains.append(os.path.relpath(path, project))
     return mains
+
+
+def has_tests(project):
+    """Whether tests/ holds an Elm module, which is where elm-test looks."""
+    for _, _, filenames in os.walk(os.path.join(project, "tests")):
+        if any(name.endswith(".elm") for name in filenames):
+            return True
+    return False
 
 
 def http_get(url):
@@ -193,11 +215,37 @@ class FreshElmStuff:
         return False
 
 
-def elm_test_command(toolchain, offline):
-    """The toolchain's elm-test with its compiler. elm-test solves the test
-    dependencies itself, from Node; on a locked package cache it runs with
-    the arguments that keep it from asking the package server."""
-    command = [toolchain["elm-test"], "--compiler", toolchain["elm"]]
+def test_major(elm_json):
+    """The major version of elm-explorations/test the tests use: the exact
+    version an application names, or the lower bound of the range a
+    package names. None without elm-explorations/test. nix/lib/test-major.nix
+    applies the same rule."""
+    tests = elm_json.get("test-dependencies", {})
+    if elm_json["type"] == "application":
+        tests = {**tests.get("direct", {}), **tests.get("indirect", {})}
+    version = tests.get("elm-explorations/test")
+    if version is None:
+        return None
+    return re.match(r"[^0-9]*([0-9]+)", version).group(1)
+
+
+def elm_test(toolchain, elm_json):
+    """The toolchain's elm-test for the elm-explorations/test the project
+    uses."""
+    major = test_major(elm_json)
+    if major is None:
+        fail("the tests need elm-explorations/test in the test-dependencies of elm.json.")
+    if major not in toolchain["elm-test"]:
+        fail(f"this elm-purifier has no elm-test for elm-explorations/test {major}.x with this compiler.")
+    return toolchain["elm-test"][major]
+
+
+def elm_test_command(toolchain, elm_json, offline):
+    """The elm-test for the project with the toolchain's compiler. elm-test
+    solves the test dependencies itself, from Node; on a locked package
+    cache it runs with the arguments that keep it from asking the package
+    server."""
+    command = [elm_test(toolchain, elm_json), "--compiler", toolchain["elm"]]
     return command + toolchain["elm-test-offline-args"] if offline else command
 
 
@@ -219,7 +267,7 @@ def run_tools(project, elm_json, toolchain, mains, tests, home, offline):
             docs = os.path.join(home, "docs.json")
             subprocess.run([elm, "make", f"--docs={docs}"], cwd=project, env=env, check=True)
         if tests:
-            command = elm_test_command(toolchain, offline)
+            command = elm_test_command(toolchain, elm_json, offline)
             subprocess.run([command[0], "make", *command[1:]], cwd=project, env=env, check=True)
 
 
@@ -284,7 +332,7 @@ def lock(mains, tests):
     if elm_json["type"] == "package" and mains:
         fail("--main applies to applications; a package's output is its documentation.")
     if tests is None:
-        tests = os.path.isdir(os.path.join(project, "tests"))
+        tests = has_tests(project)
 
     work = tempfile.mkdtemp(prefix="elm-purifier-lock-")
     try:
@@ -333,7 +381,7 @@ def relock():
     path = os.path.join(project, LOCK_NAME)
     if not os.path.exists(path):
         fail(f"there is no {LOCK_NAME} to relock; run `elm-purifier lock`.")
-    current = read_json(path)
+    current = read_lock(path)
     mains = [entry["main"] for entry in current["outputs"]["applications"].values()]
     lock(sorted(mains), current["tests"])
 
@@ -346,7 +394,7 @@ def locked_home(project):
     if not os.path.exists(path):
         note(f"there is no {LOCK_NAME}; running with the usual ELM_HOME. Run `elm-purifier lock`.")
         return None
-    current = read_json(path)
+    current = read_lock(path)
     if current["elmJson"] != file_sri(os.path.join(project, "elm.json")):
         note(f"elm.json changed since {LOCK_NAME} was made; running with the usual ELM_HOME. Run `elm-purifier relock`.")
         return None
@@ -377,9 +425,11 @@ def run_locked(make_command, path=False):
         compiler_version = select_compiler(elm_json)
     toolchain = toolchains()[compiler_version]
     if path:
-        bins = [os.path.dirname(toolchain["elm"]), os.path.dirname(toolchain["elm-test"])]
+        bins = [os.path.dirname(toolchain["elm"])]
+        if test_major(elm_json) in toolchain["elm-test"]:
+            bins.append(os.path.dirname(elm_test(toolchain, elm_json)))
         env["PATH"] = os.pathsep.join(bins + [env.get("PATH", "")])
-    command = make_command(toolchain, located is not None)
+    command = make_command(toolchain, elm_json, located is not None)
     os.execvpe(command[0], command, env)
 
 
@@ -435,9 +485,6 @@ def publish(args):
             "--argstr",
             "elm",
             store_root(toolchain["elm"]),
-            "--argstr",
-            "elm-test",
-            store_root(toolchain["elm-test"]),
         ],
         check=True,
         stdout=subprocess.PIPE,
@@ -488,13 +535,18 @@ def main(argv):
     elif verb == "elm" and rest and rest[0] in ONLINE_COMMANDS:
         run_online_elm(rest)
     elif verb == "elm":
-        run_locked(lambda toolchain, locked: [toolchain["elm"], *rest])
+        run_locked(lambda toolchain, elm_json, locked: [toolchain["elm"], *rest])
     elif verb == "exec":
         if not rest:
             fail("exec needs a command, such as `elm-purifier exec code .`.")
-        run_locked(lambda toolchain, locked: rest, path=True)
+        run_locked(lambda toolchain, elm_json, locked: rest, path=True)
     elif verb == "test":
-        run_locked(lambda toolchain, locked: [*elm_test_command(toolchain, offline=locked), *rest])
+        run_locked(
+            lambda toolchain, elm_json, locked: [
+                *elm_test_command(toolchain, elm_json, offline=locked),
+                *rest,
+            ]
+        )
     elif verb == "publish":
         publish(rest)
     else:

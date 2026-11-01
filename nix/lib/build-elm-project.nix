@@ -33,7 +33,11 @@
   elmPackages,
 }:
 {
-  # The tree the project is in.
+  # The tree the project is in, as a path: the flake's own source, or a
+  # source fetched while Nix evaluates (a flake input, builtins.fetchTarball).
+  # The builder reads elm.json and the lockfile during evaluation, so a
+  # source that is a derivation, such as fetchFromGitHub, would have to be
+  # built first (import from derivation).
   src,
   # The directory of elm.json, relative to `src`. A project whose
   # source-directories reach outside its directory takes the enclosing tree
@@ -49,7 +53,8 @@
   # made with.
   elm ? null,
   # The elm-test that `tests` runs. The default is the release for the
-  # compiler version the lock was made with.
+  # compiler version the lock was made with and the major version of
+  # elm-explorations/test in elm.json (see toolchains.nix).
   elm-test ? null,
   # Replaces the built-in fetcher for package archives; see fetch.nix.
   fetchurl ? null,
@@ -73,10 +78,19 @@ let
   toolchain =
     (import ./toolchains.nix { inherit elm-purifier elmPackages; }).${lock.elmVersion} or {
       elm = throw "elm-purifier: there is no Elm ${lock.elmVersion} compiler for the lock; pass `elm`.";
-      elm-test = throw "elm-purifier: there is no elm-test for Elm ${lock.elmVersion}; pass `elm-test`.";
+      elm-test = { };
+      elmTestOfflineArgs = [ ];
     };
   compiler = if elm != null then elm else toolchain.elm;
-  elm-test' = if elm-test != null then elm-test else toolchain.elm-test;
+  testMajor = import ./test-major.nix elmJson;
+  elm-test' =
+    if elm-test != null then
+      elm-test
+    else if testMajor == null then
+      throw "elm-purifier: the tests need elm-explorations/test in the test-dependencies of elm.json."
+    else
+      toolchain.elm-test.${testMajor}
+        or (throw "elm-purifier: there is no elm-test for Elm ${lock.elmVersion} with elm-explorations/test ${testMajor}.x; pass `elm-test`.");
 
   elmHome = callPackage ./elm-home.nix { inherit lockFile fetchurl; };
 
@@ -105,10 +119,16 @@ let
 
   isApplication = elmJson.type == "application";
 
+  # Where the project is, for messages: the directory in the source, which
+  # a developer recognizes, rather than its path in the store.
+  projectLocation =
+    if subdirectory == "." then "the project directory" else "the directory ${subdirectory}";
+
   # An application's elm.json names the exact version of every package it
   # builds with (and tests with), so a lockfile without one of them was
   # edited after `elm-purifier lock` wrote it.
-  exact = deps: lib.mapAttrsToList (name: version: "${name}/${version}") (deps.direct // deps.indirect);
+  exact =
+    deps: lib.mapAttrsToList (name: version: "${name}/${version}") (deps.direct // deps.indirect);
   requiredPackages = lib.optionals isApplication (
     exact elmJson.dependencies ++ lib.optionals lock.tests (exact elmJson."test-dependencies")
   );
@@ -118,10 +138,10 @@ let
     name: attrs:
     assert
       lock.elmJson == elmJsonHash
-      || throw "elm-purifier: elm.json changed since ${toString lockFile} was made; run `elm-purifier relock` in ${subdirectory} of the source.";
+      || throw "elm-purifier: elm.json in ${projectLocation} changed since its lockfile ${baseNameOf lockFile} was made. Run `elm-purifier relock` there and commit the new lockfile.";
     assert
       missingPackages == [ ]
-      || throw "elm-purifier: ${toString lockFile} does not lock ${lib.concatStringsSep ", " missingPackages}, which elm.json needs; run `elm-purifier relock` to write it again.";
+      || throw "elm-purifier: the lockfile ${baseNameOf lockFile} of ${projectLocation} does not lock ${lib.concatStringsSep ", " missingPackages}, which elm.json needs. Run `elm-purifier relock` there and commit the new lockfile.";
     stdenvNoCC.mkDerivation (
       {
         inherit name;

@@ -1,0 +1,13 @@
+{
+  "applications": {
+    "Main": "src/Main.elm"
+  },
+  "contentHash": "sha256-nVGMA7dqmMD+Be4uD9j93E7fq3hS468/B91ibupK9o4=",
+  "elmJson": "sha256-ZbVTJk8KFqiAV4cLxtlG7wGJsD2EYXTh6kX34Fz76dY=",
+  "hashes": {
+    "elm/core": "sha256-HRUjmHa22scI1OKhBxbkM9R6gtQdDamemlnO/064z9U=",
+    "elm/json": "sha256-JV7IM9UDeS3S9fdZCdE+QPsQYaTJejeVUCe+u8+Nhds="
+  },
+  "tests": false,
+  "version": 3
+}

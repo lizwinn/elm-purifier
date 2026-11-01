@@ -8,11 +8,12 @@
 # Elm during its own build. The packages that front end uses come from
 # reactor.lock.json, a lockfile `elm-purifier lock` wrote for the reactor/
 # directory of the compiler source, through the same package cache that
-# buildElmProject uses.
+# buildElmProject uses. The lockfile takes the package versions from
+# reactor/elm.json, so the source is fetched while Nix evaluates, with
+# builtins.fetchTarball, rather than built as a derivation.
 {
   haskell,
   elmPackages,
-  fetchgit,
   callPackage,
   # The shared nix-purifiers library.
   purifier,
@@ -20,8 +21,14 @@
 let
   inherit (haskell.lib.compose) overrideCabal addBuildDepends;
   haskellPackages = haskell.packages.ghc98;
+  src = builtins.fetchTarball {
+    url = "https://github.com/elm/compiler/archive/2f6dd29258e880dbb7effd57a829a0470d8da48b.tar.gz";
+    sha256 = "sha256-6PXucwc9nFN6TxxsSBuwEkKelThtJ6CLshjfsCmHMsE=";
+  };
   reactorHome = callPackage ../../nix/lib/elm-home.nix {
     lockFile = ./reactor.lock.json;
+    elmJsonFile = src + "/reactor/elm.json";
+    location = "the reactor/ directory of the compiler source";
     inherit purifier;
   };
 in
@@ -33,12 +40,7 @@ addBuildDepends
   (
     overrideCabal (drv: {
       version = "0.19.1";
-      src = fetchgit {
-        url = "https://github.com/elm/compiler";
-        rev = "2f6dd29258e880dbb7effd57a829a0470d8da48b";
-        sha256 = "1h9jhwlv1pqqna5s09vd72arwhhjn0dlhv0w9xx5771x0xryxxg8";
-        fetchSubmodules = true;
-      };
+      inherit src;
       preConfigure = ''
         export ELM_HOME="$PWD/.elm"
         cp -r --no-preserve=mode ${reactorHome} "$ELM_HOME"

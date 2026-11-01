@@ -2,10 +2,12 @@
 #
 # What `elm-purifier publish` builds: buildElmProject on a project
 # directory, outside any flake, with the compiler the CLI runs. Its
-# `package` attribute is the package the publish checks against.
+# `release` attribute is the release the publish checks against.
 {
   # The project directory, as an absolute path string.
   projectDir,
+  # The lockfile, which may lie outside the project.
+  lockFile,
   # The nixpkgs the CLI was built with.
   nixpkgs,
   # The shared purifier library, as pinned in this flake's flake.lock.
@@ -15,12 +17,12 @@
 }:
 let
   pkgs = import nixpkgs { };
-  buildElmProject = pkgs.callPackage ./build-elm-project.nix {
-    elm-purifier = { };
+  buildElmProject = import ./build-elm-project.nix {
     purifier = import purifierSrc { inherit (pkgs) lib; };
   };
 in
 buildElmProject {
+  inherit pkgs lockFile;
   src = /. + projectDir;
   elm = builtins.storePath elm;
 }

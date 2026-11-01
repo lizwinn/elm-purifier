@@ -1,108 +1,22 @@
 {
-  "downloads": [
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm/browser/zipball/1.0.2/"
-      },
-      "hash": "sha256-46YoQEr0ovbB6NCK8AkwsfUtrjIyVoVr/aMQd56uL7g=",
-      "path": "elm/browser/1.0.2"
-    },
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm/bytes/zipball/1.0.8/"
-      },
-      "hash": "sha256-ZrFhZwfWLZeBSy5x0TN2kd3OGocYDxij846KYWHx0aA=",
-      "path": "elm/bytes/1.0.8"
-    },
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm/core/zipball/1.0.5/"
-      },
-      "hash": "sha256-HRUjmHa22scI1OKhBxbkM9R6gtQdDamemlnO/064z9U=",
-      "path": "elm/core/1.0.5"
-    },
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm/html/zipball/1.0.1/"
-      },
-      "hash": "sha256-iGN7ZQ8B8qzhHHWdi4wuluBhCu9C0xTVjvbf0GGPDv8=",
-      "path": "elm/html/1.0.1"
-    },
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm/json/zipball/1.1.4/"
-      },
-      "hash": "sha256-JV7IM9UDeS3S9fdZCdE+QPsQYaTJejeVUCe+u8+Nhds=",
-      "path": "elm/json/1.1.4"
-    },
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm/random/zipball/1.0.0/"
-      },
-      "hash": "sha256-cqLuaCJv52zHULOjRoL0R2+kyKVpfDd4ODFnVr2CaUI=",
-      "path": "elm/random/1.0.0"
-    },
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm/time/zipball/1.0.0/"
-      },
-      "hash": "sha256-VCPZFEzmrR+sAtp1bp8PwDz8BBmqvDF9pUSFw7Nkr5w=",
-      "path": "elm/time/1.0.0"
-    },
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm/url/zipball/1.0.0/"
-      },
-      "hash": "sha256-N521TsAVDf2I4pLOQIISdnjvTIFOnXcyT4qpsaqXr1E=",
-      "path": "elm/url/1.0.0"
-    },
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm/virtual-dom/zipball/1.0.5/"
-      },
-      "hash": "sha256-ckGjk8T0l3r3XRjIV/Ge5CurA4ohJaz9JTm3cJmRg90=",
-      "path": "elm/virtual-dom/1.0.5"
-    },
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm-explorations/test/zipball/2.2.1/"
-      },
-      "hash": "sha256-6hQKTYF9Bwt15da+V0WikzeIjfEj9ZJztIaQ4u5reqw=",
-      "path": "elm-explorations/test/2.2.1"
-    }
-  ],
+  "applications": {
+    "Main": "src/Main.elm",
+    "Report.Json": "src/Report/Json.elm"
+  },
+  "contentHash": "sha256-umINb5SKbhiHm/hde1kGGhtYzkOciJBMjAqCSMMFk4o=",
   "elmJson": "sha256-DBkiq1UrzDLSCWJkpBuoS1f2Z5LfArhOhjeFRZvPAdg=",
-  "elmVersion": "0.19.1",
-  "outputs": {
-    "applications": {
-      "Main": {
-        "main": "src/Main.elm"
-      },
-      "Report.Json": {
-        "main": "src/Report/Json.elm"
-      }
-    }
+  "hashes": {
+    "elm-explorations/test": "sha256-6hQKTYF9Bwt15da+V0WikzeIjfEj9ZJztIaQ4u5reqw=",
+    "elm/browser": "sha256-46YoQEr0ovbB6NCK8AkwsfUtrjIyVoVr/aMQd56uL7g=",
+    "elm/bytes": "sha256-ZrFhZwfWLZeBSy5x0TN2kd3OGocYDxij846KYWHx0aA=",
+    "elm/core": "sha256-HRUjmHa22scI1OKhBxbkM9R6gtQdDamemlnO/064z9U=",
+    "elm/html": "sha256-iGN7ZQ8B8qzhHHWdi4wuluBhCu9C0xTVjvbf0GGPDv8=",
+    "elm/json": "sha256-JV7IM9UDeS3S9fdZCdE+QPsQYaTJejeVUCe+u8+Nhds=",
+    "elm/random": "sha256-cqLuaCJv52zHULOjRoL0R2+kyKVpfDd4ODFnVr2CaUI=",
+    "elm/time": "sha256-VCPZFEzmrR+sAtp1bp8PwDz8BBmqvDF9pUSFw7Nkr5w=",
+    "elm/url": "sha256-N521TsAVDf2I4pLOQIISdnjvTIFOnXcyT4qpsaqXr1E=",
+    "elm/virtual-dom": "sha256-ckGjk8T0l3r3XRjIV/Ge5CurA4ohJaz9JTm3cJmRg90="
   },
   "tests": true,
-  "version": 1
+  "version": 3
 }

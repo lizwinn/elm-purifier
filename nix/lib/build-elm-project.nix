@@ -1,40 +1,33 @@
 # SPDX-License-Identifier: MIT
 #
 # buildElmProject: the sandboxed builds of an Elm project, from elm.json
-# and the lockfile `elm-purifier lock` writes beside it.
+# and the lockfile `elm-purifier lock` writes. The flake publishes it as
+# `lib.elm-purifier.buildElmProject`, with the shared purifier library
+# given:
 #
-# The file is a package for callPackage: the first argument set is what it
-# takes from the package set, and the result is the builder. The
-# elm-purifier overlay (`overlays.default`) adds it to the package set as
-# `buildElmProject`, so a package written for callPackage takes it like any
-# other dependency:
+#   (elm-purifier.lib.elm-purifier.buildElmProject { inherit pkgs; src = ./.; })
+#     .packages.Main
 #
-#   { buildElmProject }: (buildElmProject { src = ./.; }).applications.Main
+# Every attribute name of the result is known at evaluation time, from the
+# lockfile and elm.json. The result has
 #
-# Every output is known at evaluation time, from the lockfile and elm.json.
-# The builder returns
+#   packages.<module>  for an application, the compiled JavaScript of each
+#                      entry module the lockfile records, at <module>.js
+#   packages.docs      for a package, its docs.json
+#   release            for a package, what `elm-purifier publish` checks
+#                      before it publishes: docs.json and the files the
+#                      package server takes from the tag (elm.json,
+#                      README.md, LICENSE and src/)
+#   tests              elm-test on tests/, when the lock covers them
+#   fetches            the entries of the lock that `readLock` returns: an
+#                      archive entry of the shared library for each
+#                      package, at its path in the package cache
 #
-#   elmHome                 the package cache of every locked package
-#   applications.<module>   for an application, the compiled JavaScript of
-#                           each entry module the lockfile records, at
-#                           <module>.js
-#   package                 for a package, docs.json and the files
-#                           `elm publish` publishes (elm.json, README.md,
-#                           LICENSE and src/), under the name and version
-#                           elm.json gives
-#   tests                   elm-test on tests/, when the lock covers them
-#   default                 every application, or the package
+# `release` of an application and `tests` of a lock without tests stop
+# evaluation with a message that says why.
+{ purifier }:
 {
-  lib,
-  stdenvNoCC,
-  callPackage,
-  symlinkJoin,
-  elm-purifier,
-  elmPackages,
-  # The shared nix-purifiers library, which fetches the package archives.
-  purifier,
-}:
-{
+  pkgs,
   # The tree the project is in, as a path: the flake's own source, or a
   # source fetched while Nix evaluates (a flake input, builtins.fetchTarball).
   # The builder reads elm.json and the lockfile during evaluation, so a
@@ -45,9 +38,13 @@
   # source-directories reach outside its directory takes the enclosing tree
   # as `src` and its own directory here.
   subdirectory ? ".",
-  # The lockfile; the default is the one `elm-purifier lock` writes beside
-  # elm.json.
+  # The lockfile. The default is the one `elm-purifier lock` writes beside
+  # elm.json; a lockfile kept outside the project, such as in a packaging
+  # flake, is passed here, and the build then ignores any copy in `src`.
   lockFile ? src + "/${subdirectory}/elm-purifier.lock.json",
+  # The fetchers that the shared library's `fetchEntry` and `tree` take,
+  # such as a `fetchurl` that sends credentials or asks a company mirror.
+  fetchers ? { },
   # Compiles applications with --optimize. An application that uses
   # Debug cannot be optimized.
   optimize ? true,
@@ -58,29 +55,41 @@
   # compiler version the lock was made with and the major version of
   # elm-explorations/test in elm.json (see toolchains.nix).
   elm-test ? null,
-  # Replaces nixpkgs' fetchurl for package archives, as for a proxy or
-  # credentials. It takes the arguments of nixpkgs' fetchurl.
-  fetchurl ? null,
   # Filters `src` before it is copied into the store, as the `filter` of
   # builtins.path. The default leaves out version control, elm-stuff,
-  # node_modules and the results of nix build.
+  # node_modules, the results of nix build and elm-purifier lockfiles, so
+  # a lockfile passed as `lockFile` is the only one the build sees.
   srcFilter ? null,
 }:
 let
-  lock = import ./lock.nix { inherit lockFile; };
+  inherit (pkgs) lib stdenvNoCC;
   projectDir = src + "/${subdirectory}";
   elmJsonFile = projectDir + "/elm.json";
   elmJson = builtins.fromJSON (builtins.readFile elmJsonFile);
 
-  elmJsonHash = builtins.convertHash {
-    hash = builtins.hashFile "sha256" elmJsonFile;
-    hashAlgo = "sha256";
-    toHashFormat = "sri";
-  };
+  # Where the project is, for messages: the directory in the source, which
+  # a developer recognizes, rather than its path in the store.
+  location = if subdirectory == "." then "the project directory" else "the directory ${subdirectory}";
+  read = import ./lock.nix { inherit lockFile elmJsonFile location; };
+  # The lock in memory, checked by the shared library: a lockfile that is
+  # not valid for elm.json stops evaluation with its problems.
+  lock = purifier.checkLock read.lock;
+  # The rest of what lock.nix read, once the lock passed the check.
+  checked = builtins.seq lock read;
 
+  # The packages of this flake (pkgs/), on the given package set.
+  elm-purifier = import ../../pkgs {
+    inherit (pkgs) callPackage;
+    lib = lib // {
+      inherit purifier;
+    };
+  };
   toolchain =
-    (import ./toolchains.nix { inherit elm-purifier elmPackages; }).${lock.elmVersion} or {
-      elm = throw "elm-purifier: there is no Elm ${lock.elmVersion} compiler for the lock; pass `elm`.";
+    (import ./toolchains.nix {
+      inherit elm-purifier;
+      inherit (pkgs) elmPackages;
+    }).${checked.elmVersion} or {
+      elm = throw "elm-purifier: there is no Elm ${checked.elmVersion} compiler for the lock; pass `elm`.";
       elm-test = { };
       elmTestOfflineArgs = [ ];
     };
@@ -93,16 +102,30 @@ let
       throw "elm-purifier: the tests need elm-explorations/test in the test-dependencies of elm.json."
     else
       toolchain.elm-test.${testMajor}
-        or (throw "elm-purifier: there is no elm-test for Elm ${lock.elmVersion} with elm-explorations/test ${testMajor}.x; pass `elm-test`.");
+        or (throw "elm-purifier: there is no elm-test for Elm ${checked.elmVersion} with elm-explorations/test ${testMajor}.x; pass `elm-test`.");
 
-  elmHome = callPackage ./elm-home.nix { inherit lockFile fetchurl purifier; };
+  elmHome = pkgs.callPackage ./elm-home.nix {
+    inherit
+      lockFile
+      elmJsonFile
+      location
+      fetchers
+      purifier
+      ;
+  };
 
   defaultSrcFilter =
     path: type:
     let
       base = baseNameOf path;
     in
-    !(base == ".git" || base == "elm-stuff" || base == "node_modules" || lib.hasPrefix "result" base);
+    !(
+      base == ".git"
+      || base == "elm-stuff"
+      || base == "node_modules"
+      || base == "elm-purifier.lock.json"
+      || lib.hasPrefix "result" base
+    );
 
   filteredSrc = builtins.path {
     path = src;
@@ -122,48 +145,30 @@ let
 
   isApplication = elmJson.type == "application";
 
-  # Where the project is, for messages: the directory in the source, which
-  # a developer recognizes, rather than its path in the store.
-  projectLocation =
-    if subdirectory == "." then "the project directory" else "the directory ${subdirectory}";
-
-  # An application's elm.json names the exact version of every package it
-  # builds with (and tests with), so a lockfile without one of them was
-  # edited after `elm-purifier lock` wrote it.
-  exact =
-    deps: lib.mapAttrsToList (name: version: "${name}/${version}") (deps.direct // deps.indirect);
-  requiredPackages = lib.optionals isApplication (
-    exact elmJson.dependencies ++ lib.optionals lock.tests (exact elmJson."test-dependencies")
-  );
-  missingPackages = lib.filter (package: !(lib.elem package lock.packages)) requiredPackages;
-
+  # Every build checks the lock first, so a lockfile that is not valid for
+  # elm.json stops evaluation with the problems lock.nix found.
   mkBuild =
     name: attrs:
-    assert
-      lock.elmJson == elmJsonHash
-      || throw "elm-purifier: elm.json in ${projectLocation} changed since its lockfile ${baseNameOf lockFile} was made. Run `elm-purifier relock` there and commit the new lockfile.";
-    assert
-      missingPackages == [ ]
-      || throw "elm-purifier: the lockfile ${baseNameOf lockFile} of ${projectLocation} does not lock ${lib.concatStringsSep ", " missingPackages}, which elm.json needs. Run `elm-purifier relock` there and commit the new lockfile.";
+    assert builtins.isAttrs lock;
     stdenvNoCC.mkDerivation (
       {
         inherit name;
         src = filteredSrc;
         dontConfigure = true;
         dontFixup = true;
-        passthru = { inherit lock elmHome; };
       }
       // attrs
     );
 
   applications = lib.mapAttrs (
-    module: output:
+    module:
+    { main }:
     mkBuild "elm-${module}" {
       nativeBuildInputs = [ compiler ];
       buildPhase = ''
         runHook preBuild
         ${setup}
-        elm make ${lib.escapeShellArg output.main} ${lib.optionalString optimize "--optimize"} \
+        elm make ${lib.escapeShellArg main} ${lib.optionalString optimize "--optimize"} \
           --output="$TMPDIR/${module}.js"
         runHook postBuild
       '';
@@ -173,9 +178,11 @@ let
         runHook postInstall
       '';
     }
-  ) lock.outputs.applications;
+  ) lock.outputs;
 
-  package = mkBuild "elm-${lib.replaceStrings [ "/" ] [ "-" ] elmJson.name}-${elmJson.version}" {
+  packageName = "elm-${lib.replaceStrings [ "/" ] [ "-" ] elmJson.name}-${elmJson.version}";
+
+  docs = mkBuild "${packageName}-docs" {
     nativeBuildInputs = [ compiler ];
     buildPhase = ''
       runHook preBuild
@@ -185,8 +192,18 @@ let
     '';
     installPhase = ''
       runHook preInstall
+      install -Dm644 "$TMPDIR/docs.json" "$out/docs.json"
+      runHook postInstall
+    '';
+  };
+
+  release = mkBuild packageName {
+    dontBuild = true;
+    installPhase = ''
+      runHook preInstall
+      cd ${lib.escapeShellArg subdirectory}
       mkdir -p "$out"
-      cp "$TMPDIR/docs.json" "$out/docs.json"
+      cp ${docs}/docs.json "$out/docs.json"
       cp -r elm.json src "$out/"
       for file in README.md LICENSE; do
         if [ -e "$file" ]; then cp "$file" "$out/"; fi
@@ -217,16 +234,16 @@ let
 
 in
 {
-  inherit elmHome lock;
-  default =
+  packages = if isApplication then applications else { inherit docs; };
+  release =
     if isApplication then
-      symlinkJoin {
-        name = "elm-applications";
-        paths = lib.attrValues applications;
-      }
+      throw "elm-purifier: ${location} holds an application, and only a package has a release to publish."
     else
-      package;
+      release;
+  tests =
+    if checked.tests then
+      tests
+    else
+      throw "elm-purifier: the lockfile ${baseNameOf lockFile} of ${location} does not cover the tests. Run `elm-purifier lock --tests` there.";
+  fetches = lock.entries;
 }
-// lib.optionalAttrs isApplication { inherit applications; }
-// lib.optionalAttrs (!isApplication) { inherit package; }
-// lib.optionalAttrs lock.tests { inherit tests; }

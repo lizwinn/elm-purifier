@@ -56,9 +56,10 @@
           { pkgs, system, ... }:
           {
             checks = import ../../../tests {
-              inherit pkgs;
-              overlay = self.overlays.default;
+              pkgs = pkgs.extend self.overlays.default;
+              inherit (self.lib.elm-purifier) buildElmProject;
               inherit (self.packages.${system}) cli;
+              purifierSrc = self.inputs.purifier;
             };
             treefmt.programs.nixfmt.enable = true;
           };

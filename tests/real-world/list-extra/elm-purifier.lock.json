@@ -1,83 +1,27 @@
 {
-  "downloads": [
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm/bytes/zipball/1.0.8/"
-      },
-      "hash": "sha256-ZrFhZwfWLZeBSy5x0TN2kd3OGocYDxij846KYWHx0aA=",
-      "path": "elm/bytes/1.0.8"
-    },
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm/core/zipball/1.0.5/"
-      },
-      "hash": "sha256-HRUjmHa22scI1OKhBxbkM9R6gtQdDamemlnO/064z9U=",
-      "path": "elm/core/1.0.5"
-    },
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm/html/zipball/1.0.1/"
-      },
-      "hash": "sha256-iGN7ZQ8B8qzhHHWdi4wuluBhCu9C0xTVjvbf0GGPDv8=",
-      "path": "elm/html/1.0.1"
-    },
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm/json/zipball/1.1.4/"
-      },
-      "hash": "sha256-JV7IM9UDeS3S9fdZCdE+QPsQYaTJejeVUCe+u8+Nhds=",
-      "path": "elm/json/1.1.4"
-    },
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm/random/zipball/1.0.0/"
-      },
-      "hash": "sha256-cqLuaCJv52zHULOjRoL0R2+kyKVpfDd4ODFnVr2CaUI=",
-      "path": "elm/random/1.0.0"
-    },
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm/time/zipball/1.0.0/"
-      },
-      "hash": "sha256-VCPZFEzmrR+sAtp1bp8PwDz8BBmqvDF9pUSFw7Nkr5w=",
-      "path": "elm/time/1.0.0"
-    },
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm/virtual-dom/zipball/1.0.5/"
-      },
-      "hash": "sha256-ckGjk8T0l3r3XRjIV/Ge5CurA4ohJaz9JTm3cJmRg90=",
-      "path": "elm/virtual-dom/1.0.5"
-    },
-    {
-      "archive": {
-        "mirrors": [],
-        "stripTop": true,
-        "url": "https://github.com/elm-explorations/test/zipball/2.2.1/"
-      },
-      "hash": "sha256-6hQKTYF9Bwt15da+V0WikzeIjfEj9ZJztIaQ4u5reqw=",
-      "path": "elm-explorations/test/2.2.1"
-    }
-  ],
+  "contentHash": "sha256-2m6EX5A+eySdCzXVqpmlkePbSBjXFCXRayatvYZ/Ym8=",
   "elmJson": "sha256-d1OA2/N4zG9/VlUL8AVjFCLoK/xDvOvS27T0uArcNv4=",
   "elmVersion": "0.19.2",
-  "outputs": {
-    "applications": {}
+  "hashes": {
+    "elm-explorations/test": "sha256-6hQKTYF9Bwt15da+V0WikzeIjfEj9ZJztIaQ4u5reqw=",
+    "elm/bytes": "sha256-ZrFhZwfWLZeBSy5x0TN2kd3OGocYDxij846KYWHx0aA=",
+    "elm/core": "sha256-HRUjmHa22scI1OKhBxbkM9R6gtQdDamemlnO/064z9U=",
+    "elm/html": "sha256-iGN7ZQ8B8qzhHHWdi4wuluBhCu9C0xTVjvbf0GGPDv8=",
+    "elm/json": "sha256-JV7IM9UDeS3S9fdZCdE+QPsQYaTJejeVUCe+u8+Nhds=",
+    "elm/random": "sha256-cqLuaCJv52zHULOjRoL0R2+kyKVpfDd4ODFnVr2CaUI=",
+    "elm/time": "sha256-VCPZFEzmrR+sAtp1bp8PwDz8BBmqvDF9pUSFw7Nkr5w=",
+    "elm/virtual-dom": "sha256-ckGjk8T0l3r3XRjIV/Ge5CurA4ohJaz9JTm3cJmRg90="
+  },
+  "solved": {
+    "elm-explorations/test": "2.2.1",
+    "elm/bytes": "1.0.8",
+    "elm/core": "1.0.5",
+    "elm/html": "1.0.1",
+    "elm/json": "1.1.4",
+    "elm/random": "1.0.0",
+    "elm/time": "1.0.0",
+    "elm/virtual-dom": "1.0.5"
   },
   "tests": true,
-  "version": 1
+  "version": 3
 }

@@ -1,11 +1,8 @@
 # SPDX-License-Identifier: MIT
 #
 # The default package overlay. It adds the packages of pkgs/ under
-# `pkgs.elm-purifier` (`.elm_0_19_1` and the elm-test releases), the
-# command as `pkgs.elm-purifier.cli`, and the builder
-# `pkgs.buildElmProject` (nix/lib/build-elm-project.nix) beside them,
-# where nixpkgs keeps its own builders, so a package written for
-# callPackage takes it by name. A consumer that lists this flake in
+# `pkgs.elm-purifier` (`.elm_0_19_1` and the elm-test releases), and the
+# command as `pkgs.elm-purifier.cli`. A consumer that lists this flake in
 # `projects` holds it as `elm-purifier/default`, which its package sets
 # apply by default.
 #
@@ -28,9 +25,6 @@ in
           version = builtins.replaceStrings [ "\n" ] [ "" ] (builtins.readFile ../../version.txt);
           purifierSrc = closure-inputs.purifier;
         };
-      };
-      buildElmProject = final.callPackage ../../nix/lib/build-elm-project.nix {
-        inherit (closure-lib) purifier;
       };
     };
 }

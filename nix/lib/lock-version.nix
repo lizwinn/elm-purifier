@@ -2,4 +2,4 @@
 #
 # The lock format version this library reads and `elm-purifier lock`
 # writes.
-1
+3

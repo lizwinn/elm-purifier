@@ -66,6 +66,7 @@ stdenvNoCC.mkDerivation {
     exec $out/bin/elm-purifier "\$@"
     EOF
       chmod +x "$out/libexec/elm-purifier/bin/$tool"
+      ln -s "$out/libexec/elm-purifier/bin/$tool" "$out/bin/$tool"
     done
     runHook postInstall
   '';

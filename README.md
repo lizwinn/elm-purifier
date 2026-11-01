@@ -1,53 +1,112 @@
 # elm-purifier
 
-elm-purifier lets Nix build an Elm project offline, in its sandbox. The
-command `elm-purifier` runs the Elm compiler and elm-test with empty
-caches, and records a hash for each package they download. The builder
-`buildElmProject` then fetches those packages and builds the project from
-`elm.json` and that lockfile. The project needs no generated Nix files.
+elm-purifier keeps Elm's development workflow on locked,
+Nix-resolved dependencies. Use the normal build and test commands in your
+working tree; building the project itself in the Nix sandbox is an
+optional next step.
+
+It follows the [purifier contract](https://github.com/nix-purifiers/purifier/blob/main/CONTRACT.md).
 
 elm-purifier is one of the [nix-purifiers](https://nix-purifiers.github.io)
 and meets their [contract](https://github.com/nix-purifiers/purifier/blob/main/CONTRACT.md).
 It runs on x86_64-linux and aarch64-linux.
 
+## Installation
+
+Install the integration into your Nix profile once:
+
+```sh
+nix profile install 'github:nix-purifiers/elm-purifier'
+```
+
+This installs the `elm / elm-test` wrappers. Use them for the locked
+development workflow below. With no purifier lockfile, it warns on standard
+error and runs the ordinary tool with impure resolution.
+
+`nix shell` makes an integration available temporarily instead of installing
+it. Keep using the activation steps below where a project environment or
+prefetched cache is required.
+
 ## Quickstart
 
-In the directory of `elm.json`, write the lockfile:
+Install Nix, then run the following from your existing project's root.
+The setup prepares the locked dependencies and the integration that
+Elm's normal commands use:
 
 ```zsh
 nix run github:nix-purifiers/elm-purifier -- lock
+nix run github:nix-purifiers/elm-purifier -- prefetch
+export PATH="$PWD/elm-stuff/elm-purifier/bin:$PATH"
+elm make src/Main.elm
+elm-test
 ```
 
-The command writes `elm-purifier.lock.json` beside `elm.json`. Commit it.
-Elm has no lockfile of its own, so `elm.json` is the resolution that the
-lock keeps. For an application, `elm.json` names every version and the
-compiler, and the builder reads them from there. For a package, `elm.json`
-gives version ranges, and the lockfile records the versions the solver
-chose and the compiler version. The lockfile also holds what `elm.json`
-cannot give: the SHA-256 of each package zip, the entry modules of an
-application, whether the lock covers the tests, a hash of `elm.json`, and a
-hash of the lockfile itself.
+Commit the lockfiles that the lock command writes, including the build
+tool's own lockfile when it has one. Keep using the project's usual build,
+test and editor commands with this setup. Nix provides the locked
+dependencies; the development commands above run outside the Nix sandbox.
+No project Nix files are needed for this workflow.
 
-Then build the project from its directory. The project gets no Nix file:
+Sandboxed builds of the whole project are an optional
+[next step](#building-the-project-with-nix).
+
+## Development loop
 
 ```zsh
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.elm-purifier.buildElmProject { src = ./.; }).packages.Main'
+nix run github:nix-purifiers/elm-purifier -- prefetch
+export PATH="$PWD/elm-stuff/elm-purifier/bin:$PATH"
+elm make src/Main.elm
+elm-test
 ```
 
-This uses the purifier's pinned nixpkgs, matching the lock command above.
-To build with ambient `<nixpkgs>` from your Nix search path instead,
-replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
-Both forms need no Nix files in your project. The build tool and language
-versions must match the lockfile; with ambient nixpkgs, lock with the
-purifier from that package set or pass a compatible toolchain to the builder.
+Elm has no plugin mechanism, so `elm-purifier` is a command of its own that
+runs the Elm compiler and elm-test. `prefetch` builds the locked packages
+and the tools with Nix, and links the tools into
+`elm-stuff/elm-purifier/bin`. The linked `elm` and `elm-test` are
+the real compiler and test runner, running on the locked packages. Elm
+commands that talk to the package server run with the usual `ELM_HOME`:
+`elm init`, `install`, `bump` and `diff`, and `elm-test init` and
+`install`. After `elm install` and `elm-test install`, the command reminds
+you to lock again.
+
+Changing dependencies takes two commands:
+
+```zsh
+elm install elm/regex
+elm-purifier lock
+elm-purifier prefetch
+```
+
+`elm-purifier update` moves the project to newer versions and locks it. Elm
+has no update command, so for an application it runs `elm-json upgrade`, which moves every package within
+its major version, or `elm-json install` for the packages you name
+(`elm-purifier update elm/json`). For a package project it locks the newest
+versions that the ranges in `elm.json` admit, where `lock` keeps the
+versions its current lockfile records. The tool `elm-json` knows only Elm
+0.19.0 and 0.19.1, so for an application on another compiler it solves a
+copy of `elm.json` that names 0.19.1, and then restores the version.
+
+Publishing a package takes one command:
+
+```zsh
+nix run github:nix-purifiers/elm-purifier -- publish
+```
+
+Elm publishes by registering a pushed git tag with the package server, which
+fetches the release from GitHub. So `publish` cannot upload the `release`
+that Nix built, because `elm publish` takes no prebuilt files. The command
+builds the `release` with Nix, compiles the documentation on the locked
+packages, and stops unless the two are identical. It then runs `elm
+publish`, which registers the tag. `publish --check` stops before `elm
+publish`.
+
+## Building the project with Nix
+
+Once the native development workflow is working, you can also build and
+test the whole project in the Nix sandbox. For this step, keep a flake or
+another Nix build definition in the project's repository, or maintain an
+external packaging repository that points at its sources and lockfiles.
+The builder consumes the same lockfiles as the development workflow.
 
 `result/Main.js` is the compiled application. For a package, build
 `.packages.docs` instead, and for the tests, build `.tests`.
@@ -125,55 +184,29 @@ everything in the scope shares, such as the Elm toolchains.
 the flake returns the lock in the shape of the contract, for tools that read
 every purifier.
 
-## Development loop
+### One-off builds without a project Nix file
+
+For an ad hoc build, the builder can also be evaluated directly from the
+project root. Replace the example package name with one from your project:
 
 ```zsh
-nix run github:nix-purifiers/elm-purifier -- prefetch
-export PATH="$PWD/elm-stuff/elm-purifier/bin:$PATH"
-elm make src/Main.elm
-elm-test
+nix build --impure --expr '
+  let
+    purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
+    pkgs = import purifier.inputs.nixpkgs {
+      system = builtins.currentSystem;
+      overlays = [ purifier.overlays.default ];
+    };
+  in
+  (pkgs.elm-purifier.buildElmProject { src = ./.; }).packages.Main'
 ```
 
-Elm has no plugin mechanism, so `elm-purifier` is a command of its own that
-runs the Elm compiler and elm-test. `prefetch` builds the locked packages
-and the tools with Nix, and links the tools into
-`elm-stuff/elm-purifier/bin`. The linked `elm` and `elm-test` are
-the real compiler and test runner, running on the locked packages. Elm
-commands that talk to the package server run with the usual `ELM_HOME`:
-`elm init`, `install`, `bump` and `diff`, and `elm-test init` and
-`install`. After `elm install` and `elm-test install`, the command reminds
-you to lock again.
-
-Changing dependencies takes two commands:
-
-```zsh
-elm install elm/regex
-elm-purifier lock
-elm-purifier prefetch
-```
-
-`elm-purifier update` moves the project to newer versions and locks it. Elm
-has no update command, so for an application it runs `elm-json upgrade`, which moves every package within
-its major version, or `elm-json install` for the packages you name
-(`elm-purifier update elm/json`). For a package project it locks the newest
-versions that the ranges in `elm.json` admit, where `lock` keeps the
-versions its current lockfile records. The tool `elm-json` knows only Elm
-0.19.0 and 0.19.1, so for an application on another compiler it solves a
-copy of `elm.json` that names 0.19.1, and then restores the version.
-
-Publishing a package takes one command:
-
-```zsh
-nix run github:nix-purifiers/elm-purifier -- publish
-```
-
-Elm publishes by registering a pushed git tag with the package server, which
-fetches the release from GitHub. So `publish` cannot upload the `release`
-that Nix built, because `elm publish` takes no prebuilt files. The command
-builds the `release` with Nix, compiles the documentation on the locked
-packages, and stops unless the two are identical. It then runs `elm
-publish`, which registers the tag. `publish --check` stops before `elm
-publish`.
+This uses the purifier's pinned nixpkgs, matching the lock command above.
+To build with ambient `<nixpkgs>` from your Nix search path instead,
+replace `import purifier.inputs.nixpkgs` with `import <nixpkgs>`.
+Both forms need no Nix files in your project. The build tool and language
+versions must match the lockfile; with ambient nixpkgs, lock with the
+purifier from that package set or pass a compatible toolchain to the builder.
 
 ## Working offline
 
@@ -253,6 +286,11 @@ elm-explorations/test that `elm.json` names. Every elm-test package of this
 flake puts its socket in the directory that `TMPDIR` names.
 
 ## Examples
+
+For day-to-day work on these projects, use the native-tool setup and
+commands in [Quickstart](#quickstart) and [Development loop](#development-loop).
+The Nix expressions below show optional sandboxed packaging of those
+projects.
 
 ### An application: elm-spa-example
 

@@ -815,12 +815,23 @@ def run_tool(name, invoked, args):
         command = [os.environ["ELM_PURIFIER_ELM_FORMAT"], *args]
         os.execv(command[0], command)
     project = tool_project(invoked)
-    if project is None:
-        if name == "elm" and args[:1] == ["init"]:
-            newest = max(toolchains(), key=version_key)
-            online(args, toolchains()[newest]["elm"])
-        fail(f"{name} found no elm.json in the working directory or above it.")
-    elm_json = read_json(os.path.join(project, "elm.json"))
+    elm_json = read_json(os.path.join(project, "elm.json")) if project else None
+    recorded = state(project, "lockfile") if project else None
+    path = lock_path(project, None) if project else None
+    if project and not os.environ.get("ELM_PURIFIER_LOCKFILE") and os.path.exists(recorded):
+        path = open(recorded).read()
+    if path is None or not os.path.exists(path):
+        note('warning: no elm-purifier.lock.json found; running Elm impurely. Run `elm-purifier lock` to use Nix-resolved dependencies.')
+        version = select_compiler(elm_json) if elm_json else max(toolchains(), key=version_key)
+        toolchain = toolchains()[version]
+        if name == "elm":
+            command = [toolchain["elm"], *args]
+        elif name == "elm-test":
+            test = elm_test(toolchain, elm_json) if elm_json else next(iter(toolchain["elm-test"].values()))
+            command = [test, *args]
+        else:
+            command = [os.environ["ELM_PURIFIER_ELM_LANGUAGE_SERVER"], *args]
+        os.execv(command[0], command)
     if name == "elm" and args[:1] == ["publish"]:
         fail("run `elm-purifier publish`, which checks the release Nix built before it publishes.")
     if name == "elm" and args[:1] and args[0] in ONLINE_ELM:

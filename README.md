@@ -5,10 +5,6 @@ Nix-resolved dependencies. Use the normal build and test commands in your
 working tree; building the project itself in the Nix sandbox is an
 optional next step.
 
-It follows the [purifier contract](https://github.com/nix-purifiers/purifier/blob/main/CONTRACT.md).
-
-elm-purifier is one of the [nix-purifiers](https://nix-purifiers.github.io)
-and meets their [contract](https://github.com/nix-purifiers/purifier/blob/main/CONTRACT.md).
 It runs on x86_64-linux and aarch64-linux.
 
 ## Installation

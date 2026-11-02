@@ -119,7 +119,8 @@ the repository of the project or in another one:
   inputs.elm-purifier.url = "github:nix-purifiers/elm-purifier";
   inputs.nixpkgs.follows = "elm-purifier/nixpkgs";
 
-  outputs = { nixpkgs, elm-purifier, ... }:
+  outputs =
+    { nixpkgs, elm-purifier, ... }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
@@ -186,15 +187,14 @@ For an ad hoc build, the builder can also be evaluated directly from the
 project root. Replace the example package name with one from your project:
 
 ```zsh
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.elm-purifier.buildElmProject { src = ./.; }).packages.Main'
+nix build --impure --expr 'let
+  purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
+  pkgs = import purifier.inputs.nixpkgs {
+    system = builtins.currentSystem;
+    overlays = [ purifier.overlays.default ];
+  };
+in
+(pkgs.elm-purifier.buildElmProject { src = ./.; }).packages.Main'
 ```
 
 This uses the purifier's pinned nixpkgs, matching the lock command above.
@@ -298,24 +298,22 @@ application and its tests:
 git clone https://github.com/rtfeldman/elm-spa-example
 cd elm-spa-example
 nix run github:nix-purifiers/elm-purifier -- lock
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.elm-purifier.buildElmProject { src = ./.; }).packages.Main'
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.elm-purifier.buildElmProject { src = ./.; }).tests'
+nix build --impure --expr 'let
+  purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
+  pkgs = import purifier.inputs.nixpkgs {
+    system = builtins.currentSystem;
+    overlays = [ purifier.overlays.default ];
+  };
+in
+(pkgs.elm-purifier.buildElmProject { src = ./.; }).packages.Main'
+nix build --impure --expr 'let
+  purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
+  pkgs = import purifier.inputs.nixpkgs {
+    system = builtins.currentSystem;
+    overlays = [ purifier.overlays.default ];
+  };
+in
+(pkgs.elm-purifier.buildElmProject { src = ./.; }).tests'
 ```
 
 `result/Main.js` is the compiled application, and the second build runs its
@@ -330,24 +328,22 @@ clone of it, write the lockfile and build the documentation and the tests:
 git clone https://github.com/elm-community/list-extra
 cd list-extra
 nix run github:nix-purifiers/elm-purifier -- lock
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.elm-purifier.buildElmProject { src = ./.; }).packages.docs'
-nix build --impure --expr '
-  let
-    purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
-    pkgs = import purifier.inputs.nixpkgs {
-      system = builtins.currentSystem;
-      overlays = [ purifier.overlays.default ];
-    };
-  in
-  (pkgs.elm-purifier.buildElmProject { src = ./.; }).tests'
+nix build --impure --expr 'let
+  purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
+  pkgs = import purifier.inputs.nixpkgs {
+    system = builtins.currentSystem;
+    overlays = [ purifier.overlays.default ];
+  };
+in
+(pkgs.elm-purifier.buildElmProject { src = ./.; }).packages.docs'
+nix build --impure --expr 'let
+  purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
+  pkgs = import purifier.inputs.nixpkgs {
+    system = builtins.currentSystem;
+    overlays = [ purifier.overlays.default ];
+  };
+in
+(pkgs.elm-purifier.buildElmProject { src = ./.; }).tests'
 ```
 
 `result/docs.json` is the documentation of the package, and the second build

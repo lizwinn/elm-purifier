@@ -108,7 +108,8 @@ the repository of the project or in another one:
 ```nix
 # flake.nix
 {
-  inputs.elm-purifier.url = "github:nix-purifiers/elm-purifier";
+  inputs.elm-purifier.url =
+    "github:nix-purifiers/elm-purifier";
   inputs.nixpkgs.follows = "elm-purifier/nixpkgs";
 
   outputs =
@@ -119,10 +120,13 @@ the repository of the project or in another one:
         inherit system;
         overlays = [ elm-purifier.overlays.default ];
       };
-      project = pkgs.elm-purifier.buildElmProject { src = ./.; };
+      project = pkgs.elm-purifier.buildElmProject {
+        src = ./.;
+      };
     in
     {
-      packages.${system}.default = project.packages.Main;
+      packages.${system}.default =
+        project.packages.Main;
       checks.${system}.tests = project.tests;
     };
 }

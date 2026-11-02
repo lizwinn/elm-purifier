@@ -39,7 +39,8 @@ For persistent use, add these packages through your usual Nix configuration.
 ## Development loop
 
 ```zsh
-nix run github:nix-purifiers/elm-purifier -- prefetch
+nix shell 'github:nix-purifiers/elm-purifier'
+elm-purifier prefetch
 export PATH="$PWD/elm-stuff/elm-purifier/bin:$PATH"
 elm make src/Main.elm
 elm-test
@@ -75,7 +76,8 @@ copy of `elm.json` that names 0.19.1, and then restores the version.
 Publishing a package takes one command:
 
 ```zsh
-nix run github:nix-purifiers/elm-purifier -- publish
+nix shell 'github:nix-purifiers/elm-purifier'
+elm-purifier publish
 ```
 
 Elm publishes by registering a pushed git tag with the package server, which
@@ -285,9 +287,10 @@ single-page application. In a clone of it, write the lockfile and build the
 application and its tests:
 
 ```zsh
+nix shell 'github:nix-purifiers/elm-purifier'
 git clone https://github.com/rtfeldman/elm-spa-example
 cd elm-spa-example
-nix run github:nix-purifiers/elm-purifier -- lock
+elm-purifier lock
 nix build --impure --expr 'let
   purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
   pkgs = import purifier.inputs.nixpkgs {
@@ -315,9 +318,10 @@ tests.
 clone of it, write the lockfile and build the documentation and the tests:
 
 ```zsh
+nix shell 'github:nix-purifiers/elm-purifier'
 git clone https://github.com/elm-community/list-extra
 cd list-extra
-nix run github:nix-purifiers/elm-purifier -- lock
+elm-purifier lock
 nix build --impure --expr 'let
   purifier = builtins.getFlake "github:nix-purifiers/elm-purifier";
   pkgs = import purifier.inputs.nixpkgs {

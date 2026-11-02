@@ -359,15 +359,10 @@ runs its tests.
 
 ## Credits
 
-elm-purifier follows the design of
-[sbt-nix-backend](https://github.com/nix-purifiers/sbt-purifier): a lock run
-with empty caches that records every download, a builder that runs the tool
-itself in the sandbox from that lockfile, an offline mode on the same locked
-files, and publishing what Nix built. Locking a build tool's downloads for
-Nix also appears in the
-[cargo (libnix)](https://github.com/nixcloud/cargo) project of nixcloud.
-The Elm 0.19.1 build is the nixpkgs recipe for Elm, and `update` runs
-[elm-json](https://github.com/zwilias/elm-json). The shared download library
-is [purifier](https://github.com/nix-purifiers/purifier).
+The purifier idea was inspired by nixcloud's
+[cargo (libnix)](https://github.com/nixcloud/cargo).
 
-elm-purifier is released under the MIT license.
+The Elm 0.19.1 build uses the nixpkgs recipe for Elm, and `update` runs
+[elm-json](https://github.com/zwilias/elm-json).
+
+Released under the MIT license; see [LICENSE](LICENSE).
